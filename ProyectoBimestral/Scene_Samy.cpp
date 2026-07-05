@@ -1,5 +1,5 @@
 // =====================================================================================
-//  ESCENA Samy
+//  ESCENA Samy 
 // =====================================================================================
 
 #include <glad/glad.h>
@@ -12,6 +12,9 @@
 #include <learnopengl/shader.h>
 #include <learnopengl/camera.h>
 #include <learnopengl/model.h>
+
+// --- SFML Audio ---
+#include <SFML/Audio.hpp>
 
 #include <iostream>
 #include <string>
@@ -35,58 +38,53 @@ const unsigned int SCR_HEIGHT = 600;
 // -------------------------------------------------------------------------------------
 // PERSONAJE / CAMARA
 // -------------------------------------------------------------------------------------
-// Posición inicial.
 Camera camera(glm::vec3(0.695734f, -0.132227f, 0.389627f));
 float lastX = SCR_WIDTH / 2.0f;
 float lastY = SCR_HEIGHT / 2.0f;
 bool firstMouse = true;
 
-// timing
+// timing y eventos
 float deltaTime = 0.0f;
 float lastFrame = 0.0f;
+float timeElapsed = 0.0f;
 
 // -------------------------------------------------------------------------------------
 // ESCENA / LUCES
 // -------------------------------------------------------------------------------------
-
-// Escala del garage
 float garageScale = 1.0f;
 
-// Posición del auto DENTRO del garage 
-
-glm::vec3 carPosition = glm::vec3(0.28f, -1.5f, 0.55f);
-float carRotationY = 0.0f;   
-float carScale = 0.0005f;
-
-// Luz blanca 
 glm::vec3 flickerLightPos = glm::vec3(5.0f, 3.0f, 2.0f);
 glm::vec3 flickerLightColor = glm::vec3(1.0f, 1.0f, 0.95f);
-
-// Luz ambiente tenue y pareja 
-glm::vec3 ambientLightColor = glm::vec3(0.04f, 0.04f, 0.045f); // ligero tinte azulado, típico de horror
+glm::vec3 ambientLightColor = glm::vec3(0.04f, 0.04f, 0.045f);
 
 // -------------------------------------------------------------------------------------
 // COLISIONES / LIMITES DEL GARAGE 
 // -------------------------------------------------------------------------------------
-
 float garageMinX = -0.744853f;
 float garageMaxX = 0.695734f;
 float garageMinZ = -1.03401f;
 float garageMaxZ = 1.00179f;
-float playerHeight = -0.1375f; 
+float playerHeight = -0.1375f;
 
-// Linterna del personaje
 bool flashlightOn = true;
 bool fKeyPressedLastFrame = false;
-
-
 bool debugMode = false;
 bool pKeyPressedLastFrame = false;
 
+// -------------------------------------------------------------------------------------
+// EVENTOS Y MODELO PERSEGUIDOR
+// -------------------------------------------------------------------------------------
+bool f1SoundPlayed = false;
+bool fearSoundPlayed = false;
+bool horrorSoundPlayed = false;
+bool renderDemon = false;
+
+glm::vec3 demonPosition = glm::vec3(0.0f, playerHeight, -1.0f); // Inicia en el fondo
+float demonScale = 0.05f;
+float demonSpeed = 0.2f;
+
 int main()
 {
-    // glfw: initialize and configure
-    // ------------------------------
     glfwInit();
     glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
     glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
@@ -115,32 +113,84 @@ int main()
         return -1;
     }
 
-
     glEnable(GL_DEPTH_TEST);
 
     Shader ourShader("shaders/Vertex_Samy.vs", "shaders/Fragment_Samy.fs");
 
-    // ---- CARGA DE MODELOS ----
-
+    // ---- CARGA DE MODELOS (Auto eliminado) ----
     Model garageModel("./model/garage/garage.obj");
-    Model carModel("./model/car/car.obj");
+    Model demonModel("./model/demon/demon.obj"); // Nuevo modelo
+
+    // ---- CARGA DE AUDIOS SFML ----
+    // ---- CARGA DE AUDIOS SFML ----
+    sf::Music f1Audio;
+    if (!f1Audio.openFromFile("radio.mp3")) {
+        std::cout << "Error audio F1\n";
+    }
+
+    sf::Music fearAudio;
+    // CAmbiado a .mp3 según lo que me indicas
+    if (!fearAudio.openFromFile("auto.mp3")) {
+        std::cout << "Error audio Fear\n";
+    }
+
+    sf::Music horrorAudio;
+    // Cambiado a .mp3
+    if (!horrorAudio.openFromFile("suspenso.mp3")) {
+        std::cout << "Error audio Horror\n";
+    } else {
+    horrorAudio.setLooping(true);
+    }
 
     camera.MovementSpeed = debugMode ? 0.5f : 0.2f;
 
     // render loop
-    // -----------
     while (!glfwWindowShouldClose(window))
     {
         float currentFrame = (float)glfwGetTime();
         deltaTime = currentFrame - lastFrame;
         lastFrame = currentFrame;
 
+        timeElapsed += deltaTime; // Actualizar cronómetro
+
         processInput(window);
+
+        // -----------------------------------------------------------------------------
+        // SECUENCIA DE TIEMPOS
+        // -----------------------------------------------------------------------------
+        if (timeElapsed > 2.0f && !f1SoundPlayed) {
+            f1Audio.play();
+            f1SoundPlayed = true;
+        }
+
+        if (timeElapsed > 10.0f && !fearSoundPlayed) {
+            fearAudio.play();
+            fearSoundPlayed = true;
+        }
+
+        if (timeElapsed > 18.0f && !horrorSoundPlayed) {
+            horrorAudio.play();
+            horrorSoundPlayed = true;
+            renderDemon = true; // El monstruo aparece
+        }
+
+        // -----------------------------------------------------------------------------
+        // LÓGICA DE PERSECUCIÓN
+        // -----------------------------------------------------------------------------
+        if (renderDemon) {
+            glm::vec3 directionToPlayer = camera.Position - demonPosition;
+            directionToPlayer.y = 0.0f; // Mantenerlo al ras del suelo
+
+            float distance = glm::length(directionToPlayer);
+            if (distance > 0.3f) {
+                directionToPlayer = glm::normalize(directionToPlayer);
+                demonPosition += directionToPlayer * demonSpeed * deltaTime;
+            }
+        }
 
         float time = currentFrame;
         float flickerIntensity = HorrorFlicker(time);
 
-        // --- Color de fondo
         if (debugMode)
             glClearColor(0.5f, 0.55f, 0.6f, 1.0f);
         else
@@ -156,13 +206,11 @@ int main()
         ourShader.setMat4("projection", projection);
         ourShader.setMat4("view", view);
 
-        // --- Directional light: 
         ourShader.setVec3("dirLight.direction", glm::vec3(-0.2f, -1.0f, -0.3f));
         ourShader.setVec3("dirLight.ambient", ambientLightColor);
         ourShader.setVec3("dirLight.diffuse", glm::vec3(0.0f));
         ourShader.setVec3("dirLight.specular", glm::vec3(0.0f));
 
-        // --- pointLights[0]
         ourShader.setVec3("pointLights[0].position", flickerLightPos);
         ourShader.setVec3("pointLights[0].ambient", flickerLightColor * 0.02f * flickerIntensity);
         ourShader.setVec3("pointLights[0].diffuse", flickerLightColor * flickerIntensity);
@@ -171,7 +219,6 @@ int main()
         ourShader.setFloat("pointLights[0].linear", 0.09f);
         ourShader.setFloat("pointLights[0].quadratic", 0.032f);
 
-        // --- pointLights[1], [2] y [3]: apagadas (reservadas para más adelante) ---
         for (int i = 1; i < 4; i++)
         {
             std::string base = "pointLights[" + std::to_string(i) + "].";
@@ -184,7 +231,6 @@ int main()
             ourShader.setFloat(base + "quadratic", 0.032f);
         }
 
-        // --- spotLight: LA LINTERNA DEL PERSONAJE ---
         ourShader.setVec3("spotLight.position", camera.Position);
         ourShader.setVec3("spotLight.direction", camera.Front);
         if (flashlightOn)
@@ -205,24 +251,27 @@ int main()
         ourShader.setFloat("spotLight.cutOff", glm::cos(glm::radians(12.5f)));
         ourShader.setFloat("spotLight.outerCutOff", glm::cos(glm::radians(17.5f)));
 
-        // ---------------------------------------------------------------
         // 1) EL GARAGE 
-        // ---------------------------------------------------------------
         glm::mat4 garageMat = glm::mat4(1.0f);
         garageMat = glm::translate(garageMat, glm::vec3(0.0f, 0.0f, 0.0f));
         garageMat = glm::scale(garageMat, glm::vec3(garageScale));
         ourShader.setMat4("model", garageMat);
         garageModel.Draw(ourShader);
 
-        // ---------------------------------------------------------------
-        // 2) EL AUTO 
-        // ---------------------------------------------------------------
-        glm::mat4 carMat = glm::mat4(1.0f);
-        carMat = glm::translate(carMat, carPosition);
-        carMat = glm::rotate(carMat, glm::radians(carRotationY), glm::vec3(0.0f, 1.0f, 0.0f));
-        carMat = glm::scale(carMat, glm::vec3(carScale));
-        ourShader.setMat4("model", carMat);
-        carModel.Draw(ourShader);
+        // 2) EL DEMONIO (Se dibuja hacia el jugador)
+        if (renderDemon) {
+            glm::mat4 demonMat = glm::mat4(1.0f);
+            demonMat = glm::translate(demonMat, demonPosition);
+
+            // Rotación dinámica hacia el jugador
+            glm::vec3 direction = glm::normalize(camera.Position - demonPosition);
+            float angle = atan2(direction.x, direction.z);
+            demonMat = glm::rotate(demonMat, angle, glm::vec3(0.0f, 1.0f, 0.0f));
+
+            demonMat = glm::scale(demonMat, glm::vec3(demonScale));
+            ourShader.setMat4("model", demonMat);
+            demonModel.Draw(ourShader);
+        }
 
         glfwSwapBuffers(window);
         glfwPollEvents();
@@ -232,9 +281,6 @@ int main()
     return 0;
 }
 
-// -------------------------------------------------------------------------------------
-// Evita que el jugador salga de la caja invisible del garage 
-// -------------------------------------------------------------------------------------
 void ClampPlayerToGarage()
 {
     camera.Position.x = glm::clamp(camera.Position.x, garageMinX, garageMaxX);
@@ -242,35 +288,13 @@ void ClampPlayerToGarage()
     camera.Position.y = playerHeight;
 }
 
-// -------------------------------------------------------------------------------------
-// Parpadeo de luces
-// -------------------------------------------------------------------------------------
 float HorrorFlicker(float time)
 {
-   
-    float base = sin(time * 30.0f) * sin(time * 13.7f);
-    float intensity = (base > 0.2f) ? 1.0f : 0.05f;
-
-    int cycle = (int)(time * 50.0f);
-    static int lastCycle = -1;
-    static bool blackout = false;
-    if (cycle != lastCycle)
-    {
-        lastCycle = cycle;
-        blackout = (rand() % 100) < 8; // ~8% de apagón total por ciclo de 0.1s
-    }
-    if (blackout) intensity = 0.0f;
-
-    return intensity;
-    
-
-    float baseIntensity = 0.35f;          
-    float cycleTime = fmod(time, 180.0f);  
+    float baseIntensity = 0.35f;
+    float cycleTime = fmod(time, 180.0f);
 
     if (cycleTime < 0.6f)
     {
-        // Ventana de 0.6s cada 40s donde la luz titila rápido antes de
-        // volver a su brillo tenue normal
         float flicker = sin(cycleTime * 60.0f);
         return (flicker > 0.0f) ? baseIntensity * 0.15f : baseIntensity;
     }
@@ -294,16 +318,12 @@ void processInput(GLFWwindow* window)
 
     if (debugMode)
     {
-        // Vuelo libre en modo debug: Space sube, Ctrl izquierdo baja.
-        // Así puedes buscar a qué altura Y está el piso real del garage.
         float flySpeed = camera.MovementSpeed * deltaTime;
         if (glfwGetKey(window, GLFW_KEY_SPACE) == GLFW_PRESS)
             camera.Position.y += flySpeed;
         if (glfwGetKey(window, GLFW_KEY_LEFT_CONTROL) == GLFW_PRESS)
             camera.Position.y -= flySpeed;
 
-        // Imprime tu posición en consola solo cuando presionas P (una vez por
-        // pulsación, no mientras la mantienes apretada)
         bool pPressed = glfwGetKey(window, GLFW_KEY_P) == GLFW_PRESS;
         if (pPressed && !pKeyPressedLastFrame)
         {
@@ -316,11 +336,9 @@ void processInput(GLFWwindow* window)
     }
     else
     {
-        // No dejar que el jugador atraviese las paredes ni "vuele" al mirar arriba/abajo
         ClampPlayerToGarage();
     }
 
-    // Toggle de linterna con F (tecla F: prende / apaga la linterna) 
     bool fPressed = glfwGetKey(window, GLFW_KEY_F) == GLFW_PRESS;
     if (fPressed && !fKeyPressedLastFrame)
         flashlightOn = !flashlightOn;
