@@ -1,6 +1,5 @@
 // =====================================================================================
-//  ESCENA DE TERROR F1 - GARAGE (grande) + AUTO ESTATICO + PERSONAJE + LUCES
-//  Shaders: shader_garage_horror.vs / shader_garage_horror.fs
+//  ESCENA Samy
 // =====================================================================================
 
 #include <glad/glad.h>
@@ -36,7 +35,7 @@ const unsigned int SCR_HEIGHT = 600;
 // -------------------------------------------------------------------------------------
 // PERSONAJE / CAMARA
 // -------------------------------------------------------------------------------------
-// Posición real encontrada dentro del garage (con el modo debug + tecla P).
+// Posición inicial.
 Camera camera(glm::vec3(0.695734f, -0.132227f, 0.389627f));
 float lastX = SCR_WIDTH / 2.0f;
 float lastY = SCR_HEIGHT / 2.0f;
@@ -50,35 +49,31 @@ float lastFrame = 0.0f;
 // ESCENA / LUCES
 // -------------------------------------------------------------------------------------
 
-// Escala del garage: como pediste que sea GRANDE tipo escenario de juego,
-// empieza aquí. Si tu modelo viene en metros reales y ya es grande, deja 1.0f;
-// si viene pequeño (típico de asset packs), sube este valor (2.0f, 5.0f, etc.)
+// Escala del garage
 float garageScale = 1.0f;
 
 // Posición del auto DENTRO del garage 
 
 glm::vec3 carPosition = glm::vec3(0.28f, -1.5f, 0.55f);
-float carRotationY = 0.0f;   // gira el auto si no está mirando hacia donde quieres
+float carRotationY = 0.0f;   
 float carScale = 0.0005f;
 
-// Luz blanca (antes "parpadeante", ahora tenue y casi constante)
+// Luz blanca 
 glm::vec3 flickerLightPos = glm::vec3(5.0f, 3.0f, 2.0f);
 glm::vec3 flickerLightColor = glm::vec3(1.0f, 1.0f, 0.95f);
 
-// Luz ambiente tenue y pareja (para que no sea 100% negro pero siga siendo oscuro).
-// No viene de una dirección, así que no genera sombras ni "foco" — solo un piso
-// mínimo de visibilidad en toda la escena.
+// Luz ambiente tenue y pareja 
 glm::vec3 ambientLightColor = glm::vec3(0.04f, 0.04f, 0.045f); // ligero tinte azulado, típico de horror
 
 // -------------------------------------------------------------------------------------
-// COLISIONES / LIMITES DEL GARAGE (caja invisible para no atravesar paredes)
+// COLISIONES / LIMITES DEL GARAGE 
 // -------------------------------------------------------------------------------------
 
 float garageMinX = -0.744853f;
 float garageMaxX = 0.695734f;
 float garageMinZ = -1.03401f;
 float garageMaxZ = 1.00179f;
-float playerHeight = -0.1375f; // promedio de las alturas de piso medidas
+float playerHeight = -0.1375f; 
 
 // Linterna del personaje
 bool flashlightOn = true;
@@ -120,20 +115,16 @@ int main()
         return -1;
     }
 
-    //stbi_set_flip_vertically_on_load(true); // prueba con/sin esto si las texturas se ven mal
 
     glEnable(GL_DEPTH_TEST);
 
-    // shader con iluminación (dirLight apagada, 2 pointLights activas, spotLight = linterna)
     Shader ourShader("shaders/vertex.vs", "shaders/fragment.fs");
 
     // ---- CARGA DE MODELOS ----
-    // Ajusta el nombre del archivo .obj al que realmente tengas en cada carpeta
+
     Model garageModel("./model/garage/garage.obj");
     Model carModel("./model/car/car.obj");
 
-    // El modelo es muy pequeño (cabe en ~1-2 unidades), así que la velocidad tiene
-    // que ser proporcionalmente chica o vas a atravesar todo el garage de un tirón.
     camera.MovementSpeed = debugMode ? 0.5f : 0.2f;
 
     // render loop
@@ -149,8 +140,7 @@ int main()
         float time = currentFrame;
         float flickerIntensity = HorrorFlicker(time);
 
-        // --- Color de fondo: gris claro en modo debug (para distinguir fondo de
-        //     geometría), negro total en modo terror ---
+        // --- Color de fondo
         if (debugMode)
             glClearColor(0.5f, 0.55f, 0.6f, 1.0f);
         else
@@ -166,15 +156,13 @@ int main()
         ourShader.setMat4("projection", projection);
         ourShader.setMat4("view", view);
 
-        // --- Directional light: usada SOLO como luz ambiente pareja (sin dirección real,
-        //     diffuse/specular en 0 para que no cree un "sol" ni sombreado direccional) ---
+        // --- Directional light: 
         ourShader.setVec3("dirLight.direction", glm::vec3(-0.2f, -1.0f, -0.3f));
         ourShader.setVec3("dirLight.ambient", ambientLightColor);
         ourShader.setVec3("dirLight.diffuse", glm::vec3(0.0f));
         ourShader.setVec3("dirLight.specular", glm::vec3(0.0f));
 
-        // --- pointLights[0]: luz blanca tenue (antes parpadeaba caótico, ahora
-        //     casi constante — ver HorrorFlicker() más abajo) ---
+        // --- pointLights[0]
         ourShader.setVec3("pointLights[0].position", flickerLightPos);
         ourShader.setVec3("pointLights[0].ambient", flickerLightColor * 0.02f * flickerIntensity);
         ourShader.setVec3("pointLights[0].diffuse", flickerLightColor * flickerIntensity);
@@ -218,7 +206,7 @@ int main()
         ourShader.setFloat("spotLight.outerCutOff", glm::cos(glm::radians(17.5f)));
 
         // ---------------------------------------------------------------
-        // 1) EL GARAGE (la sala completa donde te mueves, GRANDE)
+        // 1) EL GARAGE 
         // ---------------------------------------------------------------
         glm::mat4 garageMat = glm::mat4(1.0f);
         garageMat = glm::translate(garageMat, glm::vec3(0.0f, 0.0f, 0.0f));
@@ -227,7 +215,7 @@ int main()
         garageModel.Draw(ourShader);
 
         // ---------------------------------------------------------------
-        // 2) EL AUTO (estático, dentro del garage, achicado para que quepa)
+        // 2) EL AUTO 
         // ---------------------------------------------------------------
         glm::mat4 carMat = glm::mat4(1.0f);
         carMat = glm::translate(carMat, carPosition);
@@ -245,10 +233,7 @@ int main()
 }
 
 // -------------------------------------------------------------------------------------
-// Evita que el jugador salga de la caja invisible del garage (colisión simple con
-// paredes rectas) y lo mantiene siempre a la misma altura (sin volar al mirar
-// arriba/abajo, ya que camera.ProcessKeyboard mueve la cámara sobre el vector Front,
-// que incluye componente vertical cuando hay pitch).
+// Evita que el jugador salga de la caja invisible del garage 
 // -------------------------------------------------------------------------------------
 void ClampPlayerToGarage()
 {
@@ -262,15 +247,11 @@ void ClampPlayerToGarage()
 // -------------------------------------------------------------------------------------
 float HorrorFlicker(float time)
 {
-    // ---- CÓDIGO ORIGINAL: parpadeo caótico tipo tubo fluorescente casi muerto ----
-    // Comentado por ahora para poder ver bien la escena mientras se ajustan
-    // límites y posición del auto. Descomenta esto (y comenta el bloque de abajo)
-    // cuando quieras volver al efecto terror completo.
-    
+   
     float base = sin(time * 30.0f) * sin(time * 13.7f);
     float intensity = (base > 0.2f) ? 1.0f : 0.05f;
 
-    int cycle = (int)(time * 10.0f);
+    int cycle = (int)(time * 50.0f);
     static int lastCycle = -1;
     static bool blackout = false;
     if (cycle != lastCycle)
@@ -283,9 +264,8 @@ float HorrorFlicker(float time)
     return intensity;
     
 
-    // ---- NUEVO: luz tenue y casi constante, con un titileo corto cada 40s ----
-    float baseIntensity = 0.35f;          // suficiente para ver la sala, pero tenue
-    float cycleTime = fmod(time, 180.0f);  // se reinicia cada 40 segundos
+    float baseIntensity = 0.35f;          
+    float cycleTime = fmod(time, 180.0f);  
 
     if (cycleTime < 0.6f)
     {
@@ -298,8 +278,6 @@ float HorrorFlicker(float time)
     return baseIntensity;
 }
 
-// process all input: query GLFW whether relevant keys are pressed/released this frame
-// -------------------------------------------------------------------------------------
 void processInput(GLFWwindow* window)
 {
     if (glfwGetKey(window, GLFW_KEY_ESCAPE) == GLFW_PRESS)
@@ -342,22 +320,18 @@ void processInput(GLFWwindow* window)
         ClampPlayerToGarage();
     }
 
-    // Toggle de linterna con F (tecla F: prende / apaga la linterna) (solo reacciona al momento de presionar, no mientras se mantiene)
+    // Toggle de linterna con F (tecla F: prende / apaga la linterna) 
     bool fPressed = glfwGetKey(window, GLFW_KEY_F) == GLFW_PRESS;
     if (fPressed && !fKeyPressedLastFrame)
         flashlightOn = !flashlightOn;
     fKeyPressedLastFrame = fPressed;
 }
 
-// glfw: whenever the window size changed (by OS or user resize) this callback executes
-// -------------------------------------------------------------------------------------
 void framebuffer_size_callback(GLFWwindow* window, int width, int height)
 {
     glViewport(0, 0, width, height);
 }
 
-// glfw: whenever the mouse moves, this callback is called
-// -------------------------------------------------------
 void mouse_callback(GLFWwindow* window, double xpos, double ypos)
 {
     if (firstMouse)
@@ -376,8 +350,6 @@ void mouse_callback(GLFWwindow* window, double xpos, double ypos)
     camera.ProcessMouseMovement(xoffset, yoffset);
 }
 
-// glfw: whenever the mouse scroll wheel scrolls, this callback is called
-// ----------------------------------------------------------------------
 void scroll_callback(GLFWwindow* window, double xoffset, double yoffset)
 {
     camera.ProcessMouseScroll((float)yoffset);
