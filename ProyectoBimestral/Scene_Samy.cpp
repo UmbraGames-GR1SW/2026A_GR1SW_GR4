@@ -118,7 +118,7 @@ int main()
 
     glEnable(GL_DEPTH_TEST);
 
-    Shader ourShader("shaders/vertex.vs", "shaders/fragment.fs");
+    Shader ourShader("shaders/Vertex_Samy.vs", "shaders/Fragment_Samy.fs");
 
     // ---- CARGA DE MODELOS ----
 

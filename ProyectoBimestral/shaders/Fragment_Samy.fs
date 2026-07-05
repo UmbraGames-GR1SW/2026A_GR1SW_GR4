@@ -42,15 +42,10 @@ uniform DirLight dirLight;
 uniform PointLight pointLights[NR_POINT_LIGHTS];
 uniform SpotLight spotLight;
 
-// IMPORTANTE: tu clase Model/Mesh (Assimp) le pone a las texturas el nombre
-// "texture_diffuse1" (y "texture_specular1" si el modelo trae mapa especular).
-// Muchos OBJ de Sketchfab NO traen mapa especular, así que aquí usamos un
-// brillo constante en vez de una textura especular para evitar errores.
+
 uniform sampler2D texture_diffuse1;
 const float shininess = 16.0;
 
-// MODO DEBUG: si está en true, ignora toda la iluminación y muestra la textura
-// tal cual (bien iluminada) para poder ubicarte dentro del modelo.
 uniform bool debugFullBright;
 
 vec3 CalcDirLight(DirLight light, vec3 normal, vec3 viewDir, vec3 texColor);
@@ -63,7 +58,6 @@ void main()
 
     if (debugFullBright)
     {
-        // Sin cálculo de luces: ves la textura tal cual, bien clara, para ubicarte
         FragColor = vec4(texColor, 1.0);
         return;
     }
