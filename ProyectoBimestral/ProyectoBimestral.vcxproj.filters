@@ -26,10 +26,10 @@
     </ClCompile>
   </ItemGroup>
   <ItemGroup>
-    <None Include="shaders\vertex.vs">
+    <None Include="shaders\Vertex_Samy.vs">
       <Filter>Archivos de origen\shaders</Filter>
     </None>
-    <None Include="shaders\fragment.fs">
+    <None Include="shaders\Fragment_Samy.fs">
       <Filter>Archivos de origen\shaders</Filter>
     </None>
   </ItemGroup>

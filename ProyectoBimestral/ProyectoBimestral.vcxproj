@@ -151,8 +151,8 @@
     <ClCompile Include="Scene_Samy.cpp" />
   </ItemGroup>
   <ItemGroup>
-    <None Include="shaders\fragment.fs" />
-    <None Include="shaders\vertex.vs" />
+    <None Include="shaders\Fragment_Samy.fs" />
+    <None Include="shaders\Vertex_Samy.vs" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
