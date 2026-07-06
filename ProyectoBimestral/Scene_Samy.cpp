@@ -79,10 +79,10 @@ bool bodyMoved = false;
 bool horrorLightOn = false;
 
 // 
-glm::vec3 crimeScenePos = glm::vec3(-0.05f, -0.225f, 0.60f);
+glm::vec3 crimeScenePos = glm::vec3(-0.05f, -0.228f, 0.60f);
 
 // :
-glm::vec3 bodyOriginalPos = glm::vec3(-0.18f, -0.15f, -0.10f);
+glm::vec3 bodyOriginalPos = glm::vec3(-0.08f, -0.22f, 0.50f);
 
 //
 glm::vec3 horrorLightPos = glm::vec3(-0.11f, -0.25f, -0.90f);
@@ -90,7 +90,7 @@ glm::vec3 horrorLightPos = glm::vec3(-0.11f, -0.25f, -0.90f);
 glm::vec3 bodyCurrentPos = bodyOriginalPos;
 
 // AJUSTES DE ESCALA Y ROTACIÓN
-float bodyScale = 0.03f;         // Reducido ligeramente si aún se veía grande
+float bodyScale = 0.018f;         // Reducido ligeramente si aún se veía grande
 float crimeSceneScale = 0.082f;   // MODIFICADO: Disminuido el tamaño de la escena del crimen (antes 0.2f)
 float bodyRotationY = -45.0f;    // MODIFICADO: Rotación de 45 grados a la derecha (sentido horario)
 
