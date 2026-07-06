@@ -1,13 +1,6 @@
 #version 330 core
 out vec4 FragColor;
 
-struct DirLight {
-    vec3 direction;
-    vec3 ambient;
-    vec3 diffuse;
-    vec3 specular;
-};
-
 struct PointLight {
     vec3 position;
     float constant;
@@ -31,99 +24,59 @@ struct SpotLight {
     vec3 specular;
 };
 
-#define NR_POINT_LIGHTS 4
-
 in vec3 FragPos;
 in vec3 Normal;
 in vec2 TexCoords;
 
 uniform vec3 viewPos;
-uniform DirLight dirLight;
-uniform PointLight pointLights[NR_POINT_LIGHTS];
-uniform SpotLight spotLight;
-
+uniform PointLight pointLight; // El foco del techo
+uniform SpotLight spotLight;   // Tu linterna
 
 uniform sampler2D texture_diffuse1;
-const float shininess = 16.0;
-
-uniform bool debugFullBright;
-
-vec3 CalcDirLight(DirLight light, vec3 normal, vec3 viewDir, vec3 texColor);
-vec3 CalcPointLight(PointLight light, vec3 normal, vec3 fragPos, vec3 viewDir, vec3 texColor);
-vec3 CalcSpotLight(SpotLight light, vec3 normal, vec3 fragPos, vec3 viewDir, vec3 texColor);
+const float shininess = 32.0; // Brillo para superficies de la habitación
 
 void main()
 {
+    // Color base extraído de los archivos .png cargados automáticamente por el .obj
     vec3 texColor = vec3(texture(texture_diffuse1, TexCoords));
-
-    if (debugFullBright)
-    {
-        FragColor = vec4(texColor, 1.0);
-        return;
-    }
-
     vec3 norm = normalize(Normal);
     vec3 viewDir = normalize(viewPos - FragPos);
 
-    vec3 result = CalcDirLight(dirLight, norm, viewDir, texColor);
-    for (int i = 0; i < NR_POINT_LIGHTS; i++)
-        result += CalcPointLight(pointLights[i], norm, FragPos, viewDir, texColor);
-    result += CalcSpotLight(spotLight, norm, FragPos, viewDir, texColor);
+    // -------------------------------------------------------------------------
+    // CÁLCULO POINT LIGHT (Foco Industrial del Techo)
+    // -------------------------------------------------------------------------
+    vec3 lightDir = normalize(pointLight.position - FragPos);
+    float diff = max(dot(norm, lightDir), 0.0);
+    vec3 reflectDir = reflect(-lightDir, norm);
+    float spec = pow(max(dot(viewDir, reflectDir), 0.0), shininess);
+    
+    float distance = length(pointLight.position - FragPos);
+    float attenuation = 1.0 / (pointLight.constant + pointLight.linear * distance + pointLight.quadratic * (distance * distance));
 
+    vec3 ambientP = pointLight.ambient * texColor * attenuation;
+    vec3 diffuseP = pointLight.diffuse * diff * texColor * attenuation;
+    vec3 specularP = pointLight.specular * spec * attenuation;
+
+    // -------------------------------------------------------------------------
+    // CÁLCULO SPOTLIGHT (Linterna Interactiva)
+    // -------------------------------------------------------------------------
+    vec3 spotLightDir = normalize(spotLight.position - FragPos);
+    float spotDiff = max(dot(norm, spotLightDir), 0.0);
+    vec3 spotReflectDir = reflect(-spotLightDir, norm);
+    float spotSpec = pow(max(dot(viewDir, spotReflectDir), 0.0), shininess);
+
+    float spotDistance = length(spotLight.position - FragPos);
+    float spotAttenuation = 1.0 / (spotLight.constant + spotLight.linear * spotDistance + spotLight.quadratic * (spotDistance * spotDistance));
+
+    float theta = dot(spotLightDir, normalize(-spotLight.direction));
+    float epsilon = spotLight.cutOff - spotLight.outerCutOff;
+    float intensity = clamp((theta - spotLight.outerCutOff) / epsilon, 0.0, 1.0);
+
+    vec3 ambientS = spotLight.ambient * texColor * spotAttenuation * intensity;
+    vec3 diffuseS = spotLight.diffuse * spotDiff * texColor * spotAttenuation * intensity;
+    vec3 specularS = spotLight.specular * spotSpec * spotAttenuation * intensity;
+
+    // Combinación final de las luces
+    vec3 result = (ambientP + diffuseP + specularP) + (ambientS + diffuseS + specularS);
     FragColor = vec4(result, 1.0);
-}
-
-vec3 CalcDirLight(DirLight light, vec3 normal, vec3 viewDir, vec3 texColor)
-{
-    vec3 lightDir = normalize(-light.direction);
-    float diff = max(dot(normal, lightDir), 0.0);
-    vec3 reflectDir = reflect(-lightDir, normal);
-    float spec = pow(max(dot(viewDir, reflectDir), 0.0), shininess);
-
-    vec3 ambient = light.ambient * texColor;
-    vec3 diffuse = light.diffuse * diff * texColor;
-    vec3 specular = light.specular * spec;
-    return (ambient + diffuse + specular);
-}
-
-vec3 CalcPointLight(PointLight light, vec3 normal, vec3 fragPos, vec3 viewDir, vec3 texColor)
-{
-    vec3 lightDir = normalize(light.position - fragPos);
-    float diff = max(dot(normal, lightDir), 0.0);
-    vec3 reflectDir = reflect(-lightDir, normal);
-    float spec = pow(max(dot(viewDir, reflectDir), 0.0), shininess);
-
-    float distance = length(light.position - fragPos);
-    float attenuation = 1.0 / (light.constant + light.linear * distance + light.quadratic * (distance * distance));
-
-    vec3 ambient = light.ambient * texColor;
-    vec3 diffuse = light.diffuse * diff * texColor;
-    vec3 specular = light.specular * spec;
-    ambient *= attenuation;
-    diffuse *= attenuation;
-    specular *= attenuation;
-    return (ambient + diffuse + specular);
-}
-
-vec3 CalcSpotLight(SpotLight light, vec3 normal, vec3 fragPos, vec3 viewDir, vec3 texColor)
-{
-    vec3 lightDir = normalize(light.position - fragPos);
-    float diff = max(dot(normal, lightDir), 0.0);
-    vec3 reflectDir = reflect(-lightDir, normal);
-    float spec = pow(max(dot(viewDir, reflectDir), 0.0), shininess);
-
-    float distance = length(light.position - fragPos);
-    float attenuation = 1.0 / (light.constant + light.linear * distance + light.quadratic * (distance * distance));
-
-    float theta = dot(lightDir, normalize(-light.direction));
-    float epsilon = light.cutOff - light.outerCutOff;
-    float intensity = clamp((theta - light.outerCutOff) / epsilon, 0.0, 1.0);
-
-    vec3 ambient = light.ambient * texColor;
-    vec3 diffuse = light.diffuse * diff * texColor;
-    vec3 specular = light.specular * spec;
-    ambient *= attenuation * intensity;
-    diffuse *= attenuation * intensity;
-    specular *= attenuation * intensity;
-    return (ambient + diffuse + specular);
 }
