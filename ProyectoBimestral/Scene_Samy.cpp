@@ -78,14 +78,21 @@ bool crimeSceneRender = true;
 bool bodyMoved = false;
 bool horrorLightOn = false;
 
-glm::vec3 crimeScenePos = glm::vec3(-0.00521224f, -0.142887f, 0.823875f); // Coord 1
-glm::vec3 bodyOriginalPos = glm::vec3(-0.185793f, -0.143039f, 0.583139f); // Coord 2
-glm::vec3 horrorLightPos = glm::vec3(-0.114655f, -0.107605f, -0.416297f);  // Coord 3
+// 
+glm::vec3 crimeScenePos = glm::vec3(-0.05f, -0.225f, 0.60f);
 
-glm::vec3 bodyCurrentPos = bodyOriginalPos; // El cuerpo inicia en la posición 2
+// :
+glm::vec3 bodyOriginalPos = glm::vec3(-0.18f, -0.15f, -0.10f);
 
-// Ajusta este valor para cambiar el tamaño del cuerpo (1.0f es el tamaño real del .obj)
-float bodyScale = 0.05f;
+//
+glm::vec3 horrorLightPos = glm::vec3(-0.11f, -0.25f, -0.90f);
+
+glm::vec3 bodyCurrentPos = bodyOriginalPos;
+
+// AJUSTES DE ESCALA Y ROTACIÓN
+float bodyScale = 0.03f;         // Reducido ligeramente si aún se veía grande
+float crimeSceneScale = 0.082f;   // MODIFICADO: Disminuido el tamaño de la escena del crimen (antes 0.2f)
+float bodyRotationY = -45.0f;    // MODIFICADO: Rotación de 45 grados a la derecha (sentido horario)
 
 int main()
 {
@@ -126,19 +133,6 @@ int main()
     Model crimeSceneModel("./model/crime_scene/crime_scene.obj");
     Model bodyModel("./model/body/body.obj");
 
-    // ---- CARGA DE AUDIOS SFML  ----
-    /*
-    sf::Music f1Audio;
-    if (!f1Audio.openFromFile("radio.mp3")) { std::cout << "Error audio radio\n"; }
-
-    sf::Music fearAudio;
-    if (!fearAudio.openFromFile("auto.mp3")) { std::cout << "Error audio auto\n"; }
-
-    sf::Music horrorAudio;
-    if (!horrorAudio.openFromFile("suspenso.mp3")) { std::cout << "Error audio suspenso\n"; }
-    else { horrorAudio.setLooping(true); }
-    */
-
     camera.MovementSpeed = debugMode ? 0.5f : 0.2f;
 
     // render loop
@@ -151,15 +145,6 @@ int main()
         timeElapsed += deltaTime;
 
         processInput(window);
-
-        // -----------------------------------------------------------------------------
-        // Audios comentados
-        // -----------------------------------------------------------------------------
-        /*
-        if (timeElapsed > 2.0f && !f1SoundPlayed) { f1Audio.play(); f1SoundPlayed = true; }
-        if (timeElapsed > 10.0f && !fearSoundPlayed) { fearAudio.play(); fearSoundPlayed = true; }
-        if (timeElapsed > 18.0f && !horrorSoundPlayed) { horrorAudio.play(); horrorSoundPlayed = true; }
-        */
 
         // Activar la luz de suspenso a los 25 segundos
         if (timeElapsed > 25.0f) {
@@ -269,19 +254,20 @@ int main()
         ourShader.setMat4("model", garageMat);
         garageModel.Draw(ourShader);
 
-        // 2) MODELO CRIME SCENE (Coordenada 1)
+        // 2) MODELO CRIME SCENE
         if (crimeSceneRender) {
             glm::mat4 crimeSceneMat = glm::mat4(1.0f);
             crimeSceneMat = glm::translate(crimeSceneMat, crimeScenePos);
-            crimeSceneMat = glm::scale(crimeSceneMat, glm::vec3(0.2f));
+            crimeSceneMat = glm::scale(crimeSceneMat, glm::vec3(crimeSceneScale)); // Escala disminuida
             ourShader.setMat4("model", crimeSceneMat);
             crimeSceneModel.Draw(ourShader);
         }
 
-        // 3) MODELO BODY (Escala corregida aquí)
+        // 3) MODELO BODY (Con ajustes de posición, escala disminuida y rotación)
         glm::mat4 bodyMat = glm::mat4(1.0f);
         bodyMat = glm::translate(bodyMat, bodyCurrentPos);
-        bodyMat = glm::scale(bodyMat, glm::vec3(bodyScale)); // Usa la variable global bodyScale
+        bodyMat = glm::rotate(bodyMat, glm::radians(bodyRotationY), glm::vec3(0.0f, 1.0f, 0.0f)); // Rotación aplicada
+        bodyMat = glm::scale(bodyMat, glm::vec3(bodyScale));
         ourShader.setMat4("model", bodyMat);
         bodyModel.Draw(ourShader);
 
