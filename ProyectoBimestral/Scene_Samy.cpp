@@ -1,5 +1,5 @@
 // =====================================================================================
-//  ESCENA Samy 
+//   ESCENA Samy 
 // =====================================================================================
 
 #include <glad/glad.h>
@@ -13,8 +13,8 @@
 #include <learnopengl/camera.h>
 #include <learnopengl/model.h>
 
-// --- SFML Audio ---
-#include <SFML/Audio.hpp>
+// --- SFML Audio (Comentado por el momento) ---
+// #include <SFML/Audio.hpp>
 
 #include <iostream>
 #include <string>
@@ -72,16 +72,20 @@ bool debugMode = false;
 bool pKeyPressedLastFrame = false;
 
 // -------------------------------------------------------------------------------------
-// EVENTOS Y MODELO PERSEGUIDOR
+// EVENTOS Y TRASLADOS 
 // -------------------------------------------------------------------------------------
-bool f1SoundPlayed = false;
-bool fearSoundPlayed = false;
-bool horrorSoundPlayed = false;
-bool renderDemon = false;
+bool crimeSceneRender = true;
+bool bodyMoved = false;
+bool horrorLightOn = false;
 
-glm::vec3 demonPosition = glm::vec3(0.0f, playerHeight, -1.0f); // Inicia en el fondo
-float demonScale = 0.05f;
-float demonSpeed = 0.2f;
+glm::vec3 crimeScenePos = glm::vec3(-0.00521224f, -0.142887f, 0.823875f); // Coord 1
+glm::vec3 bodyOriginalPos = glm::vec3(-0.185793f, -0.143039f, 0.583139f); // Coord 2
+glm::vec3 horrorLightPos = glm::vec3(-0.114655f, -0.107605f, -0.416297f);  // Coord 3
+
+glm::vec3 bodyCurrentPos = bodyOriginalPos; // El cuerpo inicia en la posición 2
+
+// Ajusta este valor para cambiar el tamaño del cuerpo (1.0f es el tamaño real del .obj)
+float bodyScale = 0.05f;
 
 int main()
 {
@@ -117,30 +121,23 @@ int main()
 
     Shader ourShader("shaders/Vertex_Samy.vs", "shaders/Fragment_Samy.fs");
 
-    // ---- CARGA DE MODELOS (Auto eliminado) ----
+    // ---- CARGA DE MODELOS ----
     Model garageModel("./model/garage/garage.obj");
-    Model demonModel("./model/demon/demon.obj"); // Nuevo modelo
+    Model crimeSceneModel("./model/crime_scene/crime_scene.obj");
+    Model bodyModel("./model/body/body.obj");
 
-    // ---- CARGA DE AUDIOS SFML ----
-    // ---- CARGA DE AUDIOS SFML ----
+    // ---- CARGA DE AUDIOS SFML  ----
+    /*
     sf::Music f1Audio;
-    if (!f1Audio.openFromFile("radio.mp3")) {
-        std::cout << "Error audio F1\n";
-    }
+    if (!f1Audio.openFromFile("radio.mp3")) { std::cout << "Error audio radio\n"; }
 
     sf::Music fearAudio;
-    // CAmbiado a .mp3 según lo que me indicas
-    if (!fearAudio.openFromFile("auto.mp3")) {
-        std::cout << "Error audio Fear\n";
-    }
+    if (!fearAudio.openFromFile("auto.mp3")) { std::cout << "Error audio auto\n"; }
 
     sf::Music horrorAudio;
-    // Cambiado a .mp3
-    if (!horrorAudio.openFromFile("suspenso.mp3")) {
-        std::cout << "Error audio Horror\n";
-    } else {
-    horrorAudio.setLooping(true);
-    }
+    if (!horrorAudio.openFromFile("suspenso.mp3")) { std::cout << "Error audio suspenso\n"; }
+    else { horrorAudio.setLooping(true); }
+    */
 
     camera.MovementSpeed = debugMode ? 0.5f : 0.2f;
 
@@ -151,40 +148,34 @@ int main()
         deltaTime = currentFrame - lastFrame;
         lastFrame = currentFrame;
 
-        timeElapsed += deltaTime; // Actualizar cronómetro
+        timeElapsed += deltaTime;
 
         processInput(window);
 
         // -----------------------------------------------------------------------------
-        // SECUENCIA DE TIEMPOS
+        // Audios comentados
         // -----------------------------------------------------------------------------
-        if (timeElapsed > 2.0f && !f1SoundPlayed) {
-            f1Audio.play();
-            f1SoundPlayed = true;
-        }
+        /*
+        if (timeElapsed > 2.0f && !f1SoundPlayed) { f1Audio.play(); f1SoundPlayed = true; }
+        if (timeElapsed > 10.0f && !fearSoundPlayed) { fearAudio.play(); fearSoundPlayed = true; }
+        if (timeElapsed > 18.0f && !horrorSoundPlayed) { horrorAudio.play(); horrorSoundPlayed = true; }
+        */
 
-        if (timeElapsed > 10.0f && !fearSoundPlayed) {
-            fearAudio.play();
-            fearSoundPlayed = true;
-        }
-
-        if (timeElapsed > 18.0f && !horrorSoundPlayed) {
-            horrorAudio.play();
-            horrorSoundPlayed = true;
-            renderDemon = true; // El monstruo aparece
+        // Activar la luz de suspenso a los 25 segundos
+        if (timeElapsed > 25.0f) {
+            horrorLightOn = true;
         }
 
         // -----------------------------------------------------------------------------
-        // LÓGICA DE PERSECUCIÓN
+        // LÓGICA DE TRASLADO DEL CUERPO (BODY) AL ACERCARSE A LA COORDENADA 3
         // -----------------------------------------------------------------------------
-        if (renderDemon) {
-            glm::vec3 directionToPlayer = camera.Position - demonPosition;
-            directionToPlayer.y = 0.0f; // Mantenerlo al ras del suelo
+        if (horrorLightOn && !bodyMoved) {
+            float distanceToLight = glm::distance(camera.Position, horrorLightPos);
 
-            float distance = glm::length(directionToPlayer);
-            if (distance > 0.3f) {
-                directionToPlayer = glm::normalize(directionToPlayer);
-                demonPosition += directionToPlayer * demonSpeed * deltaTime;
+            // Si el jugador se aproxima a menos de 0.5 unidades de la coordenada 3
+            if (distanceToLight < 0.5f) {
+                bodyCurrentPos = horrorLightPos; // El cuerpo se traslada inmediatamente
+                bodyMoved = true;
             }
         }
 
@@ -211,6 +202,7 @@ int main()
         ourShader.setVec3("dirLight.diffuse", glm::vec3(0.0f));
         ourShader.setVec3("dirLight.specular", glm::vec3(0.0f));
 
+        // Luz 0: Luz parpadeante por defecto en el garage
         ourShader.setVec3("pointLights[0].position", flickerLightPos);
         ourShader.setVec3("pointLights[0].ambient", flickerLightColor * 0.02f * flickerIntensity);
         ourShader.setVec3("pointLights[0].diffuse", flickerLightColor * flickerIntensity);
@@ -219,11 +211,30 @@ int main()
         ourShader.setFloat("pointLights[0].linear", 0.09f);
         ourShader.setFloat("pointLights[0].quadratic", 0.032f);
 
-        for (int i = 1; i < 4; i++)
+        // Luz 1: Luz lúgubre en la coordenada 3 (Roja y parpadeante a los 25 segundos)
+        if (horrorLightOn) {
+            float horrorFlicker = HorrorFlicker(currentFrame * 2.5f);
+            glm::vec3 horrorLightColor = glm::vec3(0.7f, 0.05f, 0.05f);
+
+            ourShader.setVec3("pointLights[1].position", horrorLightPos);
+            ourShader.setVec3("pointLights[1].ambient", horrorLightColor * 0.01f * horrorFlicker);
+            ourShader.setVec3("pointLights[1].diffuse", horrorLightColor * horrorFlicker);
+            ourShader.setVec3("pointLights[1].specular", horrorLightColor * horrorFlicker);
+        }
+        else {
+            ourShader.setVec3("pointLights[1].diffuse", glm::vec3(0.0f));
+            ourShader.setVec3("pointLights[1].specular", glm::vec3(0.0f));
+        }
+        ourShader.setFloat("pointLights[1].constant", 1.0f);
+        ourShader.setFloat("pointLights[1].linear", 0.14f);
+        ourShader.setFloat("pointLights[1].quadratic", 0.07f);
+
+        // Desactivamos el resto de las luces del arreglo (2 y 3)
+        for (int i = 2; i < 4; i++)
         {
             std::string base = "pointLights[" + std::to_string(i) + "].";
             ourShader.setVec3(base + "position", glm::vec3(0.0f));
-            ourShader.setVec3(base + "ambient", glm::vec3(0.01f));
+            ourShader.setVec3(base + "ambient", glm::vec3(0.0f));
             ourShader.setVec3(base + "diffuse", glm::vec3(0.0f));
             ourShader.setVec3(base + "specular", glm::vec3(0.0f));
             ourShader.setFloat(base + "constant", 1.0f);
@@ -258,20 +269,21 @@ int main()
         ourShader.setMat4("model", garageMat);
         garageModel.Draw(ourShader);
 
-        // 2) EL DEMONIO (Se dibuja hacia el jugador)
-        if (renderDemon) {
-            glm::mat4 demonMat = glm::mat4(1.0f);
-            demonMat = glm::translate(demonMat, demonPosition);
-
-            // Rotación dinámica hacia el jugador
-            glm::vec3 direction = glm::normalize(camera.Position - demonPosition);
-            float angle = atan2(direction.x, direction.z);
-            demonMat = glm::rotate(demonMat, angle, glm::vec3(0.0f, 1.0f, 0.0f));
-
-            demonMat = glm::scale(demonMat, glm::vec3(demonScale));
-            ourShader.setMat4("model", demonMat);
-            demonModel.Draw(ourShader);
+        // 2) MODELO CRIME SCENE (Coordenada 1)
+        if (crimeSceneRender) {
+            glm::mat4 crimeSceneMat = glm::mat4(1.0f);
+            crimeSceneMat = glm::translate(crimeSceneMat, crimeScenePos);
+            crimeSceneMat = glm::scale(crimeSceneMat, glm::vec3(0.2f));
+            ourShader.setMat4("model", crimeSceneMat);
+            crimeSceneModel.Draw(ourShader);
         }
+
+        // 3) MODELO BODY (Escala corregida aquí)
+        glm::mat4 bodyMat = glm::mat4(1.0f);
+        bodyMat = glm::translate(bodyMat, bodyCurrentPos);
+        bodyMat = glm::scale(bodyMat, glm::vec3(bodyScale)); // Usa la variable global bodyScale
+        ourShader.setMat4("model", bodyMat);
+        bodyModel.Draw(ourShader);
 
         glfwSwapBuffers(window);
         glfwPollEvents();
