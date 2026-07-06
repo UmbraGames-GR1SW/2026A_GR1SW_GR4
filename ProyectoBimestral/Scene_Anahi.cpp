@@ -24,8 +24,10 @@ float HorrorFlicker(float time);
 const unsigned int SCR_WIDTH = 800;
 const unsigned int SCR_HEIGHT = 600;
 
-// Configuración de la cámara interactiva (Empezamos un poco desplazados del centro)
-Camera camera(glm::vec3(0.0f, 1.0f, 3.0f));
+// =====================================================================================
+// POSICIÓN INICIAL DE LA CÁMARA (APUNTANDO AL CENTRO INTERIOR)
+// =====================================================================================
+Camera camera(glm::vec3(0.0f, 1.2f, 4.0f));
 float lastX = SCR_WIDTH / 2.0f;
 float lastY = SCR_HEIGHT / 2.0f;
 bool firstMouse = true;
@@ -39,7 +41,12 @@ bool flashlightOn = true;
 bool fKeyPressedLastFrame = false;
 
 // Configuración de iluminación ambiental básica de fondo
-glm::vec3 colorLuzTecho = glm::vec3(0.8f, 0.8f, 0.7f); // Tono amarillento industrial
+glm::vec3 colorLuzTecho = glm::vec3(0.8f, 0.8f, 0.7f);
+
+// =====================================================================================
+// VARIABLES GLOBALES - ESCALA CALIBRADA PARA EL NUEVO FANTASMA
+// =====================================================================================
+float ghostScale = 350.0f;
 
 int main()
 {
@@ -48,7 +55,7 @@ int main()
     glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
     glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
 
-    GLFWwindow* window = glfwCreateWindow(SCR_WIDTH, SCR_HEIGHT, "Backroom Scene - Anahi", NULL, NULL);
+    GLFWwindow* window = glfwCreateWindow(SCR_WIDTH, SCR_HEIGHT, "Backroom Garage Scene - Anahi", NULL, NULL);
     if (window == NULL)
     {
         std::cout << "Failed to create GLFW window" << std::endl;
@@ -68,11 +75,15 @@ int main()
 
     glEnable(GL_DEPTH_TEST);
 
-    // Instanciar tus shaders específicos
+    stbi_set_flip_vertically_on_load(true);
+
     Shader ourShader("shaders/Vertex_Anahi.vs", "shaders/Fragment_Anahi.fs");
 
-    // CARGA DE TU MODELO DE LA HABITACIÓN (Ruta relativa corregida para GitHub)
-    Model roomModel("./model/room/rom.obj");
+    // =====================================================================================
+    // CARGA DE MODELOS 
+    // =====================================================================================
+    Model garageModel("./model/garage/garage.obj");
+    Model ghostModel("./model/fantasma/fantasma.obj");
 
     camera.MovementSpeed = 2.5f;
 
@@ -85,40 +96,30 @@ int main()
 
         processInput(window);
 
-        // Fondo oscuro que resalta el contraste de la linterna y focos
-        glClearColor(0.05f, 0.05f, 0.05f, 1.0f);
+        // Fondo oscuro lúgubre
+        glClearColor(0.03f, 0.03f, 0.03f, 1.0f);
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
         ourShader.use();
         ourShader.setVec3("viewPos", camera.Position);
 
-        // Proyección y matriz de vista de cámara
         glm::mat4 projection = glm::perspective(glm::radians(camera.Zoom), (float)SCR_WIDTH / (float)SCR_HEIGHT, 0.1f, 100.0f);
         glm::mat4 view = camera.GetViewMatrix();
         ourShader.setMat4("projection", projection);
         ourShader.setMat4("view", view);
 
-        // Calcular el parpadeo lúgubre para la bombilla
         float intensidadFlicker = HorrorFlicker(currentFrame);
 
-        // -----------------------------------------------------------------------------
-        // PASAR DATOS DEL FOCO DEL TECHO (PointLight) - ¡OPTIMIZADO!
-        // -----------------------------------------------------------------------------
+        // Foco Central (PointLight)
         ourShader.setVec3("pointLight.position", glm::vec3(0.0f, 4.0f, 0.0f));
-
-        // Coeficientes de atenuación más bajos para aumentar el alcance del brillo
         ourShader.setFloat("pointLight.constant", 1.0f);
         ourShader.setFloat("pointLight.linear", 0.045f);
         ourShader.setFloat("pointLight.quadratic", 0.0075f);
-
-        // Multiplicadores aumentados para eliminar la oscuridad excesiva
         ourShader.setVec3("pointLight.ambient", colorLuzTecho * 0.15f * intensidadFlicker);
         ourShader.setVec3("pointLight.diffuse", colorLuzTecho * 2.2f * intensidadFlicker);
         ourShader.setVec3("pointLight.specular", colorLuzTecho * 2.2f * intensidadFlicker);
 
-        // -----------------------------------------------------------------------------
-        // PASAR DATOS DE LA LINTERNA (SpotLight) - ¡POTENCIA CORREGIDA!
-        // -----------------------------------------------------------------------------
+        // Linterna Interactiva (SpotLight)
         ourShader.setVec3("spotLight.position", camera.Position);
         ourShader.setVec3("spotLight.direction", camera.Front);
         ourShader.setFloat("spotLight.constant", 1.0f);
@@ -130,7 +131,7 @@ int main()
         if (flashlightOn)
         {
             ourShader.setVec3("spotLight.ambient", glm::vec3(0.0f));
-            ourShader.setVec3("spotLight.diffuse", glm::vec3(2.5f, 2.5f, 2.2f)); // Linterna clara e intensa
+            ourShader.setVec3("spotLight.diffuse", glm::vec3(2.5f, 2.5f, 2.2f));
             ourShader.setVec3("spotLight.specular", glm::vec3(2.5f, 2.5f, 2.2f));
         }
         else
@@ -141,12 +142,35 @@ int main()
         }
 
         // -----------------------------------------------------------------------------
-        // DIBUJAR LA HABITACIÓN
+        // DIBUJAR ESCENARIO: EL GARAJE
         // -----------------------------------------------------------------------------
         glm::mat4 modelMat = glm::mat4(1.0f);
-        modelMat = glm::translate(modelMat, glm::vec3(0.0f, 0.0f, 0.0f)); // Posición base central
+        modelMat = glm::translate(modelMat, glm::vec3(0.0f, 0.0f, 0.0f));
         ourShader.setMat4("model", modelMat);
-        roomModel.Draw(ourShader);
+        garageModel.Draw(ourShader);
+
+        // -----------------------------------------------------------------------------
+        // DIBUJAR ENTIDAD: EL FANTASMA EN EL CENTRO EXACTO (CORREGIDO EN EJES)
+        // -----------------------------------------------------------------------------
+        glm::mat4 ghostMat = glm::mat4(20.0f);
+
+        // 1. Posicionamiento en el centro geométrico del garaje (Un poco elevado)
+        glm::vec3 centroEscena = glm::vec3(0.0f, 0.7f, 0.0f);
+        ghostMat = glm::translate(ghostMat, centroEscena);
+
+        // 2. Rotación automática en Y para que encare la orientación de la cámara
+        glm::vec3 targetDir = glm::normalize(camera.Position - centroEscena);
+        float angle = atan2(targetDir.x, targetDir.z);
+        ghostMat = glm::rotate(ghostMat, angle, glm::vec3(0.0f, 1.0f, 0.0f));
+
+        // 3. CORRECCIÓN DE EJES BLENDER: Rotación de 90 grados en X para levantarlo
+        ghostMat = glm::rotate(ghostMat, glm::radians(90.0f), glm::vec3(1.0f, 0.0f, 0.0f));
+
+        // 4. Aplicamos el escalado masivo requerido para este .obj específico
+        ghostMat = glm::scale(ghostMat, glm::vec3(ghostScale));
+
+        ourShader.setMat4("model", ghostMat);
+        ghostModel.Draw(ourShader);
 
         glfwSwapBuffers(window);
         glfwPollEvents();
@@ -156,7 +180,7 @@ int main()
     return 0;
 }
 
-// Lógica matemática modificada: Brillo base óptimo manteniendo los microparpadeos
+// Control dinámico del parpadeo de las luces
 float HorrorFlicker(float time)
 {
     float baseIntensity = 0.85f;
@@ -173,7 +197,7 @@ float HorrorFlicker(float time)
     return baseIntensity;
 }
 
-// Procesar teclas de movimiento de cámara
+// Controles de movimiento básicos de la cámara
 void processInput(GLFWwindow* window)
 {
     if (glfwGetKey(window, GLFW_KEY_ESCAPE) == GLFW_PRESS)
@@ -188,7 +212,6 @@ void processInput(GLFWwindow* window)
     if (glfwGetKey(window, GLFW_KEY_D) == GLFW_PRESS)
         camera.ProcessKeyboard(RIGHT, deltaTime);
 
-    // Tecla F para prender y apagar la linterna de forma limpia
     bool fPressed = glfwGetKey(window, GLFW_KEY_F) == GLFW_PRESS;
     if (fPressed && !fKeyPressedLastFrame)
         flashlightOn = !flashlightOn;
