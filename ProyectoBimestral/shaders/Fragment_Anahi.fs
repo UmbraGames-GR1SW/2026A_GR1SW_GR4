@@ -29,21 +29,25 @@ in vec3 Normal;
 in vec2 TexCoords;
 
 uniform vec3 viewPos;
-uniform PointLight pointLight; // El foco del techo
-uniform SpotLight spotLight;   // Tu linterna
+uniform PointLight pointLight;
+uniform SpotLight spotLight;
 
 uniform sampler2D texture_diffuse1;
-const float shininess = 32.0; // Brillo para superficies de la habitación
+const float shininess = 32.0;
 
 void main()
 {
-    // Color base extraído de los archivos .png cargados automáticamente por el .obj
-    vec3 texColor = vec3(texture(texture_diffuse1, TexCoords));
+    // Muestrear la textura del archivo
+    vec4 sampledColor = texture(texture_diffuse1, TexCoords);
+    
+    // Si la textura falla o no se encuentra (rgb igual a 0), asignamos un gris base
+    vec3 texColor = (sampledColor.rgb == vec3(0.0)) ? vec3(0.5, 0.5, 0.5) : sampledColor.rgb;
+
     vec3 norm = normalize(Normal);
     vec3 viewDir = normalize(viewPos - FragPos);
 
     // -------------------------------------------------------------------------
-    // CÁLCULO POINT LIGHT (Foco Industrial del Techo)
+    // CÁLCULO POINT LIGHT (Foco Fijo en el Techo)
     // -------------------------------------------------------------------------
     vec3 lightDir = normalize(pointLight.position - FragPos);
     float diff = max(dot(norm, lightDir), 0.0);
@@ -58,7 +62,7 @@ void main()
     vec3 specularP = pointLight.specular * spec * attenuation;
 
     // -------------------------------------------------------------------------
-    // CÁLCULO SPOTLIGHT (Linterna Interactiva)
+    // CÁLCULO SPOTLIGHT (Tu Linterna Interactiva)
     // -------------------------------------------------------------------------
     vec3 spotLightDir = normalize(spotLight.position - FragPos);
     float spotDiff = max(dot(norm, spotLightDir), 0.0);
@@ -76,7 +80,7 @@ void main()
     vec3 diffuseS = spotLight.diffuse * spotDiff * texColor * spotAttenuation * intensity;
     vec3 specularS = spotLight.specular * spotSpec * spotAttenuation * intensity;
 
-    // Combinación final de las luces
+    // Suma combinada de la bombilla y la linterna
     vec3 result = (ambientP + diffuseP + specularP) + (ambientS + diffuseS + specularS);
     FragColor = vec4(result, 1.0);
 }
