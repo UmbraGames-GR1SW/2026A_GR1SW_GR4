@@ -14,7 +14,7 @@
 #include <learnopengl/model.h>
 
 // --- SFML Audio ---
-#include <SFML/Audio.hpp>
+//#include <SFML/Audio.hpp>
 
 #include <iostream>
 #include <string>
@@ -118,12 +118,11 @@ int main()
     Shader ourShader("shaders/Vertex_Samy.vs", "shaders/Fragment_Samy.fs");
 
     // ---- CARGA DE MODELOS (Auto eliminado) ----
-    Model garageModel("./model/garage/garage.obj");
-    Model demonModel("./model/demon/demon.obj"); // Nuevo modelo
-
+    Model garageModel("model/garage/garage.obj");
+    Model demonModel("model/demon/demon.obj");
     // ---- CARGA DE AUDIOS SFML ----
     // ---- CARGA DE AUDIOS SFML ----
-    sf::Music f1Audio;
+   /*sf::Music f1Audio;
     if (!f1Audio.openFromFile("radio.mp3")) {
         std::cout << "Error audio F1\n";
     }
@@ -141,6 +140,7 @@ int main()
     } else {
     horrorAudio.setLooping(true);
     }
+    */
 
     camera.MovementSpeed = debugMode ? 0.5f : 0.2f;
 
@@ -159,17 +159,17 @@ int main()
         // SECUENCIA DE TIEMPOS
         // -----------------------------------------------------------------------------
         if (timeElapsed > 2.0f && !f1SoundPlayed) {
-            f1Audio.play();
+            //f1Audio.play();
             f1SoundPlayed = true;
         }
 
         if (timeElapsed > 10.0f && !fearSoundPlayed) {
-            fearAudio.play();
+            //fearAudio.play();
             fearSoundPlayed = true;
         }
 
         if (timeElapsed > 18.0f && !horrorSoundPlayed) {
-            horrorAudio.play();
+            //horrorAudio.play();
             horrorSoundPlayed = true;
             renderDemon = true; // El monstruo aparece
         }

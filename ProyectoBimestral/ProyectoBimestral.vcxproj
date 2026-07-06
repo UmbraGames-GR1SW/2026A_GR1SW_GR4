@@ -148,11 +148,11 @@
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClCompile Include="glad.c" />
-    <ClCompile Include="Scene_Samy.cpp" />
+    <ClCompile Include="Scene_Anahi.cpp" />
   </ItemGroup>
   <ItemGroup>
-    <None Include="shaders\Fragment_Samy.fs" />
-    <None Include="shaders\Vertex_Samy.vs" />
+    <None Include="shaders\Fragment_Anahi.fs" />
+    <None Include="shaders\Vertex_Anahi.vs" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
