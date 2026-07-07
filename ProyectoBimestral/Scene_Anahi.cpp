@@ -62,9 +62,17 @@ const float CLOWN_FEET_OFFSET = 8.926056f;
 // de la cámara en z=4.0), en una esquina para no tapar la salida.
 // Ajusta X/Z según lo que veas al correr el juego: el .obj no trae la puerta
 // etiquetada, así que esto es una aproximación basada en el bounding box del cuarto.
-glm::vec3 chukyPosition = glm::vec3(-6.0f, 0.0f, 2.5f);
+glm::vec3 chukyPosition = glm::vec3(-6.0f, 0.0f, 1.8f);
 float chukyScale = 1.0f;              // El modelo ya viene casi a escala real (~1.47u de alto)
 const float CHUKY_FEET_OFFSET = 0.00636f; // Corrige que los pies del modelo están ligeramente bajo y=0
+
+// =====================================================================================
+// VARIABLES GLOBALES - HACHA (PROP ESTÁTICO EN EL CENTRO DE LA HABITACIÓN)
+// =====================================================================================
+// Centro real calculado del bounding box del garaje (X: -9.5 a 7.0, Z: -5.17 a 5.17)
+glm::vec3 hachaPosition = glm::vec3(4.5f, 0.0f, 0.0f);
+float hachaScale = 4.0f;   // Escalado x6 (~2.2u de alto) para que se vea grande e imponente
+float hachaRotationY = glm::radians(25.0f); // Rotación fija para que no quede "cuadrada"
 
 int main()
 {
@@ -101,6 +109,7 @@ int main()
     Model garageModel("./model/garage/garage.obj");
     Model clownModel("./model/payaso/payaso.obj");
     Model chukyModel("./model/chuky/chuky.obj");
+    Model hachaModel("./model/hacha/hacha.obj");
 
     camera.MovementSpeed = 2.5f;
 
@@ -275,7 +284,7 @@ int main()
         glm::vec3 targetDirChuky = glm::normalize(camera.Position - chukyPosition);
         float angleChuky = atan2(targetDirChuky.x, targetDirChuky.z);
         // Si tu modelo no queda de frente, ajusta este offset como se hizo con el payaso
-        const float CHUKY_ROTATION_OFFSET = glm::radians(-0.70f);
+        const float CHUKY_ROTATION_OFFSET = glm::radians(0.70f);
         angleChuky += CHUKY_ROTATION_OFFSET;
 
         chukyMat = glm::rotate(chukyMat, angleChuky, glm::vec3(0.0f, 1.0f, 0.0f));
@@ -283,6 +292,17 @@ int main()
 
         ourShader.setMat4("model", chukyMat);
         chukyModel.Draw(ourShader);
+
+        // -----------------------------------------------------------------------------
+        // DIBUJAR PROP: EL HACHA (ESTÁTICA, EN EL CENTRO DE LA HABITACIÓN)
+        // -----------------------------------------------------------------------------
+        glm::mat4 hachaMat = glm::mat4(1.0f);
+        hachaMat = glm::translate(hachaMat, hachaPosition);
+        hachaMat = glm::rotate(hachaMat, hachaRotationY, glm::vec3(1.0f, 0.0f, 0.0f));
+        hachaMat = glm::scale(hachaMat, glm::vec3(hachaScale));
+
+        ourShader.setMat4("model", hachaMat);
+        hachaModel.Draw(ourShader);
 
         glfwSwapBuffers(window);
         glfwPollEvents();
