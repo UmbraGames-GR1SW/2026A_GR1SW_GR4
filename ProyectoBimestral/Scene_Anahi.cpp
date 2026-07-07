@@ -11,6 +11,7 @@
 
 #include <iostream>
 #include <cmath>
+#include <random> // Para el efecto de temblor inquietante
 
 #define STB_IMAGE_IMPLEMENTATION
 #include "learnopengl/stb_image.h" 
@@ -25,12 +26,16 @@ const unsigned int SCR_WIDTH = 800;
 const unsigned int SCR_HEIGHT = 600;
 
 // =====================================================================================
-// POSICIÓN INICIAL DE LA CÁMARA (APUNTANDO AL CENTRO INTERIOR)
+// CONFIGURACIÓN DE CÁMARA Y DINÁMICAS DEL JUGADOR
 // =====================================================================================
 Camera camera(glm::vec3(0.0f, 1.2f, 4.0f));
 float lastX = SCR_WIDTH / 2.0f;
 float lastY = SCR_HEIGHT / 2.0f;
 bool firstMouse = true;
+
+// Variables para el cabeceo de la cámara (Head Bobbing)
+float bobbingTimer = 0.0f;
+bool isMoving = false;
 
 // Tiempos
 float deltaTime = 0.0f;
@@ -40,13 +45,15 @@ float lastFrame = 0.0f;
 bool flashlightOn = true;
 bool fKeyPressedLastFrame = false;
 
-// Configuración de iluminación ambiental básica de fondo
-glm::vec3 colorLuzTecho = glm::vec3(0.8f, 0.8f, 0.7f);
+// Configuración de iluminación ambiental
+glm::vec3 colorLuzTecho = glm::vec3(0.75f, 0.75f, 0.7f);
 
 // =====================================================================================
-// VARIABLES GLOBALES - ESCALA CALIBRADA PARA EL NUEVO FANTASMA
+// VARIABLES GLOBALES - COORDENADAS ESTÁTICAS DEL PAYASO
 // =====================================================================================
-float ghostScale = 350.0f;
+glm::vec3 clownPosition = glm::vec3(0.0f, 0.0f, -2.0f);
+float clownScale = 0.0038f;
+const float CLOWN_FEET_OFFSET = 8.926056f;
 
 int main()
 {
@@ -79,13 +86,15 @@ int main()
 
     Shader ourShader("shaders/Vertex_Anahi.vs", "shaders/Fragment_Anahi.fs");
 
-    // =====================================================================================
-    // CARGA DE MODELOS 
-    // =====================================================================================
+    // Carga de modelos
     Model garageModel("./model/garage/garage.obj");
-    Model ghostModel("./model/fantasma/fantasma.obj");
+    Model clownModel("./model/payaso/payaso.obj");
 
     camera.MovementSpeed = 2.5f;
+
+    // Configuración para el generador de temblores lúgubres
+    std::default_random_engine generator;
+    std::uniform_real_distribution<float> distribution(-0.008f, 0.008f);
 
     // Render Loop
     while (!glfwWindowShouldClose(window))
@@ -96,8 +105,20 @@ int main()
 
         processInput(window);
 
-        // Fondo oscuro lúgubre
-        glClearColor(0.03f, 0.03f, 0.03f, 1.0f);
+        // Lógica de Head Bobbing (cabeceo al caminar)
+        if (isMoving)
+        {
+            bobbingTimer += deltaTime * 12.0f;
+            camera.Position.y = 1.2f + sin(bobbingTimer) * 0.05f;
+        }
+        else
+        {
+            bobbingTimer = 0.0f;
+            camera.Position.y = 1.2f;
+        }
+
+        // Fondo oscuro
+        glClearColor(0.02f, 0.02f, 0.02f, 1.0f);
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
         ourShader.use();
@@ -110,29 +131,64 @@ int main()
 
         float intensidadFlicker = HorrorFlicker(currentFrame);
 
-        // Foco Central (PointLight)
+        // -----------------------------------------------------------------------------
+        // 🌟 LÓGICA DE VIDEOJUEGO: DETECTOR DE JUMPSCARE (DISTANCIA TRIDIMENSIONAL)
+        // -----------------------------------------------------------------------------
+        // Medimos la distancia real entre la cámara y la posición base del payaso
+        float distanciaAlPayaso = glm::distance(camera.Position, clownPosition);
+
+        float dynamicClownScale = clownScale;
+        bool jumpscareActivo = false;
+
+        if (distanciaAlPayaso < 1.1f) // Si te acercas demasiado (Zonas de peligro)
+        {
+            jumpscareActivo = true;
+
+            // 1. Bloqueamos la mirada: Forzamos el Front de la cámara para que apunte directo a sus ojos
+            camera.Front = glm::normalize(clownPosition - camera.Position);
+
+            // 2. Modificamos la luz: Hacemos un parpadeo caótico, histérico y ultra rápido
+            intensidadFlicker = (sin(currentFrame * 90.0f) > 0.0f) ? 0.0f : 4.0f;
+
+            // 3. Modificamos el tamaño: El payaso se infla de golpe para saltar agresivamente a tu cara
+            dynamicClownScale = clownScale * 1.7f;
+        }
+
+        // PointLight (Foco Fijo del Techo)
         ourShader.setVec3("pointLight.position", glm::vec3(0.0f, 4.0f, 0.0f));
         ourShader.setFloat("pointLight.constant", 1.0f);
-        ourShader.setFloat("pointLight.linear", 0.045f);
-        ourShader.setFloat("pointLight.quadratic", 0.0075f);
-        ourShader.setVec3("pointLight.ambient", colorLuzTecho * 0.15f * intensidadFlicker);
-        ourShader.setVec3("pointLight.diffuse", colorLuzTecho * 2.2f * intensidadFlicker);
-        ourShader.setVec3("pointLight.specular", colorLuzTecho * 2.2f * intensidadFlicker);
+        ourShader.setFloat("pointLight.linear", 0.07f);
+        ourShader.setFloat("pointLight.quadratic", 0.017f);
+        ourShader.setVec3("pointLight.ambient", colorLuzTecho * 0.12f * intensidadFlicker);
+        ourShader.setVec3("pointLight.diffuse", colorLuzTecho * 0.9f * intensidadFlicker);
+        ourShader.setVec3("pointLight.specular", colorLuzTecho * 0.9f * intensidadFlicker);
 
-        // Linterna Interactiva (SpotLight)
-        ourShader.setVec3("spotLight.position", camera.Position);
+        // SpotLight (Linterna con desfase sutil por respiración)
+        glm::vec3 dynamicLinternaPos = camera.Position;
+        if (isMoving) {
+            dynamicLinternaPos.x += cos(bobbingTimer) * 0.02f;
+        }
+
+        ourShader.setVec3("spotLight.position", dynamicLinternaPos);
         ourShader.setVec3("spotLight.direction", camera.Front);
         ourShader.setFloat("spotLight.constant", 1.0f);
         ourShader.setFloat("spotLight.linear", 0.045f);
-        ourShader.setFloat("spotLight.quadratic", 0.016f);
-        ourShader.setFloat("spotLight.cutOff", glm::cos(glm::radians(15.0f)));
-        ourShader.setFloat("spotLight.outerCutOff", glm::cos(glm::radians(22.0f)));
+        ourShader.setFloat("spotLight.quadratic", 0.012f);
+        ourShader.setFloat("spotLight.cutOff", glm::cos(glm::radians(14.5f)));
+        ourShader.setFloat("spotLight.outerCutOff", glm::cos(glm::radians(20.0f)));
 
         if (flashlightOn)
         {
+            // Si el jumpscare está activo, la linterna se descontrola y brilla con un tono rojo de alarma
+            if (jumpscareActivo) {
+                ourShader.setVec3("spotLight.diffuse", glm::vec3(3.0f, 0.0f, 0.0f));
+                ourShader.setVec3("spotLight.specular", glm::vec3(3.0f, 0.0f, 0.0f));
+            }
+            else {
+                ourShader.setVec3("spotLight.diffuse", glm::vec3(2.2f, 2.2f, 1.9f));
+                ourShader.setVec3("spotLight.specular", glm::vec3(2.2f, 2.2f, 1.9f));
+            }
             ourShader.setVec3("spotLight.ambient", glm::vec3(0.0f));
-            ourShader.setVec3("spotLight.diffuse", glm::vec3(2.5f, 2.5f, 2.2f));
-            ourShader.setVec3("spotLight.specular", glm::vec3(2.5f, 2.5f, 2.2f));
         }
         else
         {
@@ -150,27 +206,37 @@ int main()
         garageModel.Draw(ourShader);
 
         // -----------------------------------------------------------------------------
-        // DIBUJAR ENTIDAD: EL FANTASMA EN EL CENTRO EXACTO (CORREGIDO EN EJES)
+        // DIBUJAR ENTIDAD: EL PAYASO CON SISTEMA DE SUSTO INTEGRADO
         // -----------------------------------------------------------------------------
-        glm::mat4 ghostMat = glm::mat4(20.0f);
+        glm::mat4 clownMat = glm::mat4(1.0f);
 
-        // 1. Posicionamiento en el centro geométrico del garaje (Un poco elevado)
-        glm::vec3 centroEscena = glm::vec3(0.0f, 0.7f, 0.0f);
-        ghostMat = glm::translate(ghostMat, centroEscena);
+        glm::vec3 clownFinalPos = clownPosition;
+        clownFinalPos.y += CLOWN_FEET_OFFSET * clownScale;
 
-        // 2. Rotación automática en Y para que encare la orientación de la cámara
-        glm::vec3 targetDir = glm::normalize(camera.Position - centroEscena);
+        // Efecto flotación constante (levitación espectral)
+        clownFinalPos.y += sin(currentFrame * 2.0f) * 0.08f;
+
+        // Micro-temblores aleatorios. Si te asusta, el temblor se duplica por el shock
+        float factorTemblor = jumpscareActivo ? 3.0f : 1.0f;
+        clownFinalPos.x += distribution(generator) * factorTemblor;
+        clownFinalPos.z += distribution(generator) * factorTemblor;
+
+        clownMat = glm::translate(clownMat, clownFinalPos);
+
+        // El payaso busca tu posición con la mirada dinámicamente
+        glm::vec3 targetDir = glm::normalize(camera.Position - clownPosition);
         float angle = atan2(targetDir.x, targetDir.z);
-        ghostMat = glm::rotate(ghostMat, angle, glm::vec3(0.0f, 1.0f, 0.0f));
 
-        // 3. CORRECCIÓN DE EJES BLENDER: Rotación de 90 grados en X para levantarlo
-        ghostMat = glm::rotate(ghostMat, glm::radians(90.0f), glm::vec3(1.0f, 0.0f, 0.0f));
+        const float CLOWN_ROTATION_OFFSET = glm::radians(-50.0f);
+        angle += CLOWN_ROTATION_OFFSET;
 
-        // 4. Aplicamos el escalado masivo requerido para este .obj específico
-        ghostMat = glm::scale(ghostMat, glm::vec3(ghostScale));
+        clownMat = glm::rotate(clownMat, angle, glm::vec3(0.0f, 1.0f, 0.0f));
 
-        ourShader.setMat4("model", ghostMat);
-        ghostModel.Draw(ourShader);
+        // Escalado dinámico (Normal en reposo / Masivo en Jumpscare)
+        clownMat = glm::scale(clownMat, glm::vec3(dynamicClownScale));
+
+        ourShader.setMat4("model", clownMat);
+        clownModel.Draw(ourShader);
 
         glfwSwapBuffers(window);
         glfwPollEvents();
@@ -180,7 +246,6 @@ int main()
     return 0;
 }
 
-// Control dinámico del parpadeo de las luces
 float HorrorFlicker(float time)
 {
     float baseIntensity = 0.85f;
@@ -188,29 +253,38 @@ float HorrorFlicker(float time)
 
     if (cycleTime > 2.0f && cycleTime < 2.3f)
     {
-        return (sin(time * 50.0f) > 0.0f) ? 0.1f : baseIntensity;
+        return (sin(time * 50.0f) > 0.0f) ? 0.15f : baseIntensity;
     }
     if (cycleTime > 5.5f && cycleTime < 5.7f)
     {
-        return 0.0f;
+        return 0.05f;
     }
     return baseIntensity;
 }
 
-// Controles de movimiento básicos de la cámara
 void processInput(GLFWwindow* window)
 {
     if (glfwGetKey(window, GLFW_KEY_ESCAPE) == GLFW_PRESS)
         glfwSetWindowShouldClose(window, true);
 
-    if (glfwGetKey(window, GLFW_KEY_W) == GLFW_PRESS)
+    isMoving = false;
+
+    if (glfwGetKey(window, GLFW_KEY_W) == GLFW_PRESS) {
         camera.ProcessKeyboard(FORWARD, deltaTime);
-    if (glfwGetKey(window, GLFW_KEY_S) == GLFW_PRESS)
+        isMoving = true;
+    }
+    if (glfwGetKey(window, GLFW_KEY_S) == GLFW_PRESS) {
         camera.ProcessKeyboard(BACKWARD, deltaTime);
-    if (glfwGetKey(window, GLFW_KEY_A) == GLFW_PRESS)
+        isMoving = true;
+    }
+    if (glfwGetKey(window, GLFW_KEY_A) == GLFW_PRESS) {
         camera.ProcessKeyboard(LEFT, deltaTime);
-    if (glfwGetKey(window, GLFW_KEY_D) == GLFW_PRESS)
+        isMoving = true;
+    }
+    if (glfwGetKey(window, GLFW_KEY_D) == GLFW_PRESS) {
         camera.ProcessKeyboard(RIGHT, deltaTime);
+        isMoving = true;
+    }
 
     bool fPressed = glfwGetKey(window, GLFW_KEY_F) == GLFW_PRESS;
     if (fPressed && !fKeyPressedLastFrame)
