@@ -55,6 +55,17 @@ glm::vec3 clownPosition = glm::vec3(0.0f, 0.0f, -2.0f);
 float clownScale = 0.0038f;
 const float CLOWN_FEET_OFFSET = 8.926056f;
 
+// =====================================================================================
+// VARIABLES GLOBALES - COORDENADAS ESTÁTICAS DE CHUKY
+// =====================================================================================
+// Colocado cerca de la puerta del garage (zona de Z positivo, cerca del spawn
+// de la cámara en z=4.0), en una esquina para no tapar la salida.
+// Ajusta X/Z según lo que veas al correr el juego: el .obj no trae la puerta
+// etiquetada, así que esto es una aproximación basada en el bounding box del cuarto.
+glm::vec3 chukyPosition = glm::vec3(-6.0f, 0.0f, 2.5f);
+float chukyScale = 1.0f;              // El modelo ya viene casi a escala real (~1.47u de alto)
+const float CHUKY_FEET_OFFSET = 0.00636f; // Corrige que los pies del modelo están ligeramente bajo y=0
+
 int main()
 {
     glfwInit();
@@ -89,6 +100,7 @@ int main()
     // Carga de modelos
     Model garageModel("./model/garage/garage.obj");
     Model clownModel("./model/payaso/payaso.obj");
+    Model chukyModel("./model/chuky/chuky.obj");
 
     camera.MovementSpeed = 2.5f;
 
@@ -132,26 +144,38 @@ int main()
         float intensidadFlicker = HorrorFlicker(currentFrame);
 
         // -----------------------------------------------------------------------------
-        // 🌟 LÓGICA DE VIDEOJUEGO: DETECTOR DE JUMPSCARE (DISTANCIA TRIDIMENSIONAL)
+        // 🌟 LÓGICA DE VIDEOJUEGO: DETECTORES DE JUMPSCARE (DISTANCIA TRIDIMENSIONAL)
         // -----------------------------------------------------------------------------
-        // Medimos la distancia real entre la cámara y la posición base del payaso
         float distanciaAlPayaso = glm::distance(camera.Position, clownPosition);
+        float distanciaAChuky = glm::distance(camera.Position, chukyPosition);
 
         float dynamicClownScale = clownScale;
-        bool jumpscareActivo = false;
+        float dynamicChukyScale = chukyScale;
+        bool jumpscarePayaso = false;
+        bool jumpscareChuky = false;
 
-        if (distanciaAlPayaso < 1.1f) // Si te acercas demasiado (Zonas de peligro)
+        if (distanciaAlPayaso < 1.1f)
         {
-            jumpscareActivo = true;
-
-            // 1. Bloqueamos la mirada: Forzamos el Front de la cámara para que apunte directo a sus ojos
+            jumpscarePayaso = true;
             camera.Front = glm::normalize(clownPosition - camera.Position);
-
-            // 2. Modificamos la luz: Hacemos un parpadeo caótico, histérico y ultra rápido
-            intensidadFlicker = (sin(currentFrame * 90.0f) > 0.0f) ? 0.0f : 4.0f;
-
-            // 3. Modificamos el tamaño: El payaso se infla de golpe para saltar agresivamente a tu cara
             dynamicClownScale = clownScale * 1.7f;
+        }
+
+        // Chuky tiene su propio radio de detección y su propio "salto" de escala
+        if (distanciaAChuky < 1.0f)
+        {
+            jumpscareChuky = true;
+            camera.Front = glm::normalize(chukyPosition - camera.Position);
+            dynamicChukyScale = chukyScale * 1.4f;
+        }
+
+        // Si cualquiera de los dos está activo, la escena entra en modo pánico
+        bool jumpscareActivo = jumpscarePayaso || jumpscareChuky;
+
+        if (jumpscareActivo)
+        {
+            // Parpadeo caótico, histérico y ultra rápido
+            intensidadFlicker = (sin(currentFrame * 90.0f) > 0.0f) ? 0.0f : 4.0f;
         }
 
         // PointLight (Foco Fijo del Techo)
@@ -179,7 +203,7 @@ int main()
 
         if (flashlightOn)
         {
-            // Si el jumpscare está activo, la linterna se descontrola y brilla con un tono rojo de alarma
+            // Si cualquier jumpscare está activo, la linterna se descontrola en rojo de alarma
             if (jumpscareActivo) {
                 ourShader.setVec3("spotLight.diffuse", glm::vec3(3.0f, 0.0f, 0.0f));
                 ourShader.setVec3("spotLight.specular", glm::vec3(3.0f, 0.0f, 0.0f));
@@ -212,31 +236,53 @@ int main()
 
         glm::vec3 clownFinalPos = clownPosition;
         clownFinalPos.y += CLOWN_FEET_OFFSET * clownScale;
+        clownFinalPos.y += sin(currentFrame * 2.0f) * 0.08f; // levitación espectral
 
-        // Efecto flotación constante (levitación espectral)
-        clownFinalPos.y += sin(currentFrame * 2.0f) * 0.08f;
-
-        // Micro-temblores aleatorios. Si te asusta, el temblor se duplica por el shock
-        float factorTemblor = jumpscareActivo ? 3.0f : 1.0f;
-        clownFinalPos.x += distribution(generator) * factorTemblor;
-        clownFinalPos.z += distribution(generator) * factorTemblor;
+        float factorTemblorPayaso = jumpscarePayaso ? 3.0f : 1.0f;
+        clownFinalPos.x += distribution(generator) * factorTemblorPayaso;
+        clownFinalPos.z += distribution(generator) * factorTemblorPayaso;
 
         clownMat = glm::translate(clownMat, clownFinalPos);
 
-        // El payaso busca tu posición con la mirada dinámicamente
-        glm::vec3 targetDir = glm::normalize(camera.Position - clownPosition);
-        float angle = atan2(targetDir.x, targetDir.z);
-
+        glm::vec3 targetDirPayaso = glm::normalize(camera.Position - clownPosition);
+        float anglePayaso = atan2(targetDirPayaso.x, targetDirPayaso.z);
         const float CLOWN_ROTATION_OFFSET = glm::radians(-50.0f);
-        angle += CLOWN_ROTATION_OFFSET;
+        anglePayaso += CLOWN_ROTATION_OFFSET;
 
-        clownMat = glm::rotate(clownMat, angle, glm::vec3(0.0f, 1.0f, 0.0f));
-
-        // Escalado dinámico (Normal en reposo / Masivo en Jumpscare)
+        clownMat = glm::rotate(clownMat, anglePayaso, glm::vec3(0.0f, 1.0f, 0.0f));
         clownMat = glm::scale(clownMat, glm::vec3(dynamicClownScale));
 
         ourShader.setMat4("model", clownMat);
         clownModel.Draw(ourShader);
+
+        // -----------------------------------------------------------------------------
+        // DIBUJAR ENTIDAD: CHUKY CON SU PROPIO SISTEMA DE SUSTO
+        // -----------------------------------------------------------------------------
+        glm::mat4 chukyMat = glm::mat4(1.0f);
+
+        glm::vec3 chukyFinalPos = chukyPosition;
+        chukyFinalPos.y += CHUKY_FEET_OFFSET * chukyScale;
+        // Chuky no levita: se arrastra/tiembla en el piso, más terrenal que el payaso
+        chukyFinalPos.y += (jumpscareChuky ? sin(currentFrame * 25.0f) * 0.02f : 0.0f);
+
+        float factorTemblorChuky = jumpscareChuky ? 4.0f : 0.4f; // ligero temblor incluso en reposo
+        chukyFinalPos.x += distribution(generator) * factorTemblorChuky;
+        chukyFinalPos.z += distribution(generator) * factorTemblorChuky;
+
+        chukyMat = glm::translate(chukyMat, chukyFinalPos);
+
+        // Chuky también gira para "mirarte" cuando estás cerca
+        glm::vec3 targetDirChuky = glm::normalize(camera.Position - chukyPosition);
+        float angleChuky = atan2(targetDirChuky.x, targetDirChuky.z);
+        // Si tu modelo no queda de frente, ajusta este offset como se hizo con el payaso
+        const float CHUKY_ROTATION_OFFSET = glm::radians(-0.70f);
+        angleChuky += CHUKY_ROTATION_OFFSET;
+
+        chukyMat = glm::rotate(chukyMat, angleChuky, glm::vec3(0.0f, 1.0f, 0.0f));
+        chukyMat = glm::scale(chukyMat, glm::vec3(dynamicChukyScale));
+
+        ourShader.setMat4("model", chukyMat);
+        chukyModel.Draw(ourShader);
 
         glfwSwapBuffers(window);
         glfwPollEvents();
