@@ -24,6 +24,7 @@ void framebuffer_size_callback(GLFWwindow* window, int width, int height);
 void mouse_callback(GLFWwindow* window, double xpos, double ypos);
 void processInput(GLFWwindow* window);
 float HorrorFlicker(float time);
+float RevealFactor(float tiempoActual, float appearTime, float fadeDuration);
 
 // Dimensiones de ventana
 const unsigned int SCR_WIDTH = 800;
@@ -98,6 +99,23 @@ glm::vec3 mascaraPosition = glm::vec3(-9.0f, 0.0f, 0.0f);
 float mascaraScale = 1.0f;
 float mascaraRotationY = glm::radians(90.0f);
 
+// =====================================================================================
+// TIEMPOS DE APARICIÓN GRADUAL (los modelos aparecen tras X segundos de haber
+// empezado a jugar, sin importar la distancia a la que estés viéndolos)
+// appearTime   = segundos desde que se presiona ENTER hasta que empieza a aparecer
+// fadeDuration = cuántos segundos tarda en crecer de 0 a su tamaño completo
+// =====================================================================================
+const float CLOWN_APPEAR_TIME = 5.0f;
+const float CHUKY_APPEAR_TIME = 10.0f;
+const float HACHA_APPEAR_TIME = 3.0f;
+const float DANGER_APPEAR_TIME = 7.0f;
+const float MASCARA_APPEAR_TIME = 12.0f;
+const float REVEAL_FADE_DURATION = 1.5f;
+
+// Momento (en tiempo de glfwGetTime) en el que el jugador presionó ENTER
+float tiempoInicioJuego = 0.0f;
+bool tiempoInicioRegistrado = false;
+
 int main()
 {
     glfwInit();
@@ -161,6 +179,14 @@ int main()
 
         processInput(window);
 
+        // Registrar el instante exacto en que arranca el juego (justo tras ENTER)
+        if (juegoIniciado && !tiempoInicioRegistrado)
+        {
+            tiempoInicioJuego = currentFrame;
+            tiempoInicioRegistrado = true;
+        }
+        float tiempoDeJuego = juegoIniciado ? (currentFrame - tiempoInicioJuego) : 0.0f;
+
         // Lógica de Head Bobbing (cabeceo al caminar)
         if (isMoving)
         {
@@ -221,6 +247,18 @@ int main()
             // Parpadeo caótico, histérico y ultra rápido
             intensidadFlicker = (sin(currentFrame * 90.0f) > 0.0f) ? 0.0f : 4.0f;
         }
+
+        // -----------------------------------------------------------------------------
+        // 🌟 REVELACIÓN GRADUAL: los modelos aparecen tras cierto tiempo de juego
+        // -----------------------------------------------------------------------------
+        float revealPayaso = RevealFactor(tiempoDeJuego, CLOWN_APPEAR_TIME, REVEAL_FADE_DURATION);
+        float revealChuky = RevealFactor(tiempoDeJuego, CHUKY_APPEAR_TIME, REVEAL_FADE_DURATION);
+        float revealHacha = RevealFactor(tiempoDeJuego, HACHA_APPEAR_TIME, REVEAL_FADE_DURATION);
+        float revealDanger = RevealFactor(tiempoDeJuego, DANGER_APPEAR_TIME, REVEAL_FADE_DURATION);
+        float revealMascara = RevealFactor(tiempoDeJuego, MASCARA_APPEAR_TIME, REVEAL_FADE_DURATION);
+
+        dynamicClownScale *= revealPayaso;
+        dynamicChukyScale *= revealChuky;
 
         // PointLight (Foco Fijo del Techo)
         ourShader.setVec3("pointLight.position", glm::vec3(0.0f, 4.0f, 0.0f));
@@ -334,7 +372,7 @@ int main()
         glm::mat4 hachaMat = glm::mat4(1.0f);
         hachaMat = glm::translate(hachaMat, hachaPosition);
         hachaMat = glm::rotate(hachaMat, hachaRotationY, glm::vec3(1.0f, 0.0f, 0.0f));
-        hachaMat = glm::scale(hachaMat, glm::vec3(hachaScale));
+        hachaMat = glm::scale(hachaMat, glm::vec3(hachaScale * revealHacha));
 
         ourShader.setMat4("model", hachaMat);
         hachaModel.Draw(ourShader);
@@ -345,7 +383,7 @@ int main()
         glm::mat4 dangerMat = glm::mat4(1.0f);
         dangerMat = glm::translate(dangerMat, dangerPosition);
         dangerMat = glm::rotate(dangerMat, dangerRotationY, glm::vec3(0.0f, 1.0f, 0.0f));
-        dangerMat = glm::scale(dangerMat, glm::vec3(dangerScale));
+        dangerMat = glm::scale(dangerMat, glm::vec3(dangerScale * revealDanger));
 
         ourShader.setMat4("model", dangerMat);
         dangerModel.Draw(ourShader);
@@ -356,7 +394,7 @@ int main()
         glm::mat4 mascaraMat = glm::mat4(1.0f);
         mascaraMat = glm::translate(mascaraMat, mascaraPosition);
         mascaraMat = glm::rotate(mascaraMat, mascaraRotationY, glm::vec3(0.0f, 1.0f, 0.0f));
-        mascaraMat = glm::scale(mascaraMat, glm::vec3(mascaraScale));
+        mascaraMat = glm::scale(mascaraMat, glm::vec3(mascaraScale * revealMascara));
 
         ourShader.setMat4("model", mascaraMat);
         mascaraModel.Draw(ourShader);
@@ -391,7 +429,7 @@ int main()
             float cajaX = (SCR_WIDTH - cajaAncho) / 2.0f;
             float cajaY = SCR_HEIGHT / 2.0f - 55.0f;
 
-            textRenderer->RenderQuad(cajaX, cajaY, cajaAncho, cajaAlto, glm::vec3(0.0f, 0.0f, 0.0f), 0.55f);
+            textRenderer->RenderQuad(cajaX, cajaY, cajaAncho, cajaAlto, glm::vec3(0.0f, 0.0f, 0.0f), 0.85f);
 
             textRenderer->RenderText(linea1, (SCR_WIDTH - ancho1) / 2.0f, SCR_HEIGHT / 2.0f + 60.0f, scale1, glm::vec3(0.85f, 0.0f, 0.0f));
             textRenderer->RenderText(linea2, (SCR_WIDTH - ancho2) / 2.0f, SCR_HEIGHT / 2.0f + 15.0f, scale2, glm::vec3(0.85f, 0.0f, 0.0f));
@@ -431,6 +469,16 @@ float HorrorFlicker(float time)
         return 0.05f;
     }
     return baseIntensity;
+}
+
+// Calcula qué tan "revelado" debe estar un modelo según el tiempo transcurrido
+// desde que el jugador empezó a jugar (presionó ENTER). Devuelve 0.0 (invisible)
+// antes de "appearTime", y crece suavemente (smoothstep) hasta 1.0 (tamaño
+// completo) durante los "fadeDuration" segundos siguientes.
+float RevealFactor(float tiempoActual, float appearTime, float fadeDuration)
+{
+    float t = glm::clamp((tiempoActual - appearTime) / fadeDuration, 0.0f, 1.0f);
+    return t * t * (3.0f - 2.0f * t); // smoothstep
 }
 
 void processInput(GLFWwindow* window)
