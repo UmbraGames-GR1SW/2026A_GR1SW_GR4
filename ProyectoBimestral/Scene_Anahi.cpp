@@ -90,12 +90,12 @@ float hachaRotationY = glm::radians(25.0f);
 // =====================================================================================
 glm::vec3 dangerPosition = glm::vec3(-6.0f, 1.0f, -3.5f);
 float dangerScale = 1.0f;
-float dangerRotationY = glm::radians(50.0f);
+float dangerRotationY = glm::radians(60.0f);
 
 // =====================================================================================
 // VARIABLES GLOBALES - MÁSCARA (PROP ESTÁTICO DECORATIVO CONTRA LA PARED)
 // =====================================================================================
-glm::vec3 mascaraPosition = glm::vec3(-9.0f, 0.0f, 0.0f);
+glm::vec3 mascaraPosition = glm::vec3(-9.0f, 0.0f, 2.0f);
 float mascaraScale = 1.0f;
 float mascaraRotationY = glm::radians(90.0f);
 
@@ -105,12 +105,12 @@ float mascaraRotationY = glm::radians(90.0f);
 // appearTime   = segundos desde que se presiona ENTER hasta que empieza a aparecer
 // fadeDuration = cuántos segundos tarda en crecer de 0 a su tamaño completo
 // =====================================================================================
-const float CLOWN_APPEAR_TIME = 5.0f;
-const float CHUKY_APPEAR_TIME = 10.0f;
-const float HACHA_APPEAR_TIME = 3.0f;
+const float CLOWN_APPEAR_TIME = 7.0f;
+const float CHUKY_APPEAR_TIME = 12.0f;
+const float HACHA_APPEAR_TIME = 6.0f;
 const float DANGER_APPEAR_TIME = 7.0f;
 const float MASCARA_APPEAR_TIME = 12.0f;
-const float REVEAL_FADE_DURATION = 1.5f;
+const float REVEAL_FADE_DURATION = 3.58f;
 
 // Momento (en tiempo de glfwGetTime) en el que el jugador presionó ENTER
 float tiempoInicioJuego = 0.0f;
