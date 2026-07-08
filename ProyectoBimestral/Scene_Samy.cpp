@@ -1,6 +1,6 @@
-// =====================================================================================
+// ==============================
 //   ESCENA Samy 
-// =====================================================================================
+// ==============================
 
 #include <glad/glad.h>
 #include <GLFW/glfw3.h>
@@ -13,13 +13,9 @@
 #include <learnopengl/camera.h>
 #include <learnopengl/model.h>
 
-// --- SFML Audio (Comentado por el momento) ---
-// #include <SFML/Audio.hpp>
-
 #include <iostream>
 #include <string>
 #include <cstdlib>
-#include <cmath>
 
 #define STB_IMAGE_IMPLEMENTATION
 #include <learnopengl/stb_image.h>
@@ -32,8 +28,8 @@ void ClampPlayerToGarage();
 float HorrorFlicker(float time);
 
 // settings
-const unsigned int SCR_WIDTH = 800;
-const unsigned int SCR_HEIGHT = 600;
+const unsigned int SCR_WIDTH = 2560;
+const unsigned int SCR_HEIGHT = 1600;
 
 // -------------------------------------------------------------------------------------
 // PERSONAJE / CAMARA
@@ -75,24 +71,35 @@ bool pKeyPressedLastFrame = false;
 // EVENTOS Y TRASLADOS 
 // -------------------------------------------------------------------------------------
 bool crimeSceneRender = true;
-bool bodyMoved = false;
 bool horrorLightOn = false;
 
-// 
 glm::vec3 crimeScenePos = glm::vec3(-0.05f, -0.228f, 0.60f);
-
-// :
 glm::vec3 bodyOriginalPos = glm::vec3(-0.08f, -0.22f, 0.50f);
-
-//
 glm::vec3 horrorLightPos = glm::vec3(-0.11f, -0.25f, -0.90f);
+glm::vec3 llantasPos = glm::vec3(0.08f, -0.19f, -0.9f);
+glm::vec3 monsterPos = glm::vec3(0.00f, -0.228f, -0.5f);
 
-glm::vec3 bodyCurrentPos = bodyOriginalPos;
+// AJUSTES DE ESCALA Y ROTACIÓN GENERAL
+float bodyScale = 0.018f;
+float crimeSceneScale = 0.082f;
+float bodyRotationY = -45.0f;
+float llantasScale = 0.1f;
+float monsterSpeed = 0.18f;
+float monsterScale = 0.12f;
 
-// AJUSTES DE ESCALA Y ROTACIÓN
-float bodyScale = 0.018f;         // Reducido ligeramente si aún se veía grande
-float crimeSceneScale = 0.082f;   // MODIFICADO: Disminuido el tamaño de la escena del crimen (antes 0.2f)
-float bodyRotationY = -45.0f;    // MODIFICADO: Rotación de 45 grados a la derecha (sentido horario)
+// =====================================================================================
+// *** PANEL DE CONTROL DE LA LINTERNA 
+// =====================================================================================
+float linternaScale = 0.0001f;   // Reducido drásticamente. Si sigue enorme, prueba con 0.0005f
+float linternaOffsetX = 0.015f;    // Izquierda (-) / Derecha (+) respecto a tus ojos
+float linternaOffsetY = -0.085f;   // Abajo (-) / Arriba (+) respecto a tus ojos
+float linternaOffsetZ = 0.18f;    // Atrás (-) / Adelante (+) para alejarlo de la pantalla
+
+// Rotaciones extra por si el modelo vino girado por defecto en su archivo .obj
+float linternaFixRotX = 0.0f;
+float linternaFixRotY = 0.0f;
+float linternaFixRotZ = 0.0f;
+// =====================================================================================
 
 int main()
 {
@@ -132,8 +139,14 @@ int main()
     Model garageModel("./model/garage/garage.obj");
     Model crimeSceneModel("./model/crime_scene/crime_scene.obj");
     Model bodyModel("./model/body/body.obj");
+    Model llantasModel("./model/llantas/llantas.obj");
+    Model monsterModel("./model/monster/monster.obj");
+    Model linternaModel("./model/linterna/linterna.obj");
 
     camera.MovementSpeed = debugMode ? 0.5f : 0.2f;
+
+    int frameCount = 0;
+    float previousTime = (float)glfwGetTime();
 
     // render loop
     while (!glfwWindowShouldClose(window))
@@ -142,27 +155,20 @@ int main()
         deltaTime = currentFrame - lastFrame;
         lastFrame = currentFrame;
 
-        timeElapsed += deltaTime;
+        // --- CÁLCULO DE FPS ---
+        frameCount++;
+        if (currentFrame - previousTime >= 1.0f)
+        {
+            std::string title = "Garage F1 - Horror Scene | FPS: " + std::to_string(frameCount);
+            glfwSetWindowTitle(window, title.c_str());
+            frameCount = 0;
+            previousTime = currentFrame;
+        }
 
+        timeElapsed += deltaTime;
         processInput(window);
 
-        // Activar la luz de suspenso a los 25 segundos
-        if (timeElapsed > 25.0f) {
-            horrorLightOn = true;
-        }
-
-        // -----------------------------------------------------------------------------
-        // LÓGICA DE TRASLADO DEL CUERPO (BODY) AL ACERCARSE A LA COORDENADA 3
-        // -----------------------------------------------------------------------------
-        if (horrorLightOn && !bodyMoved) {
-            float distanceToLight = glm::distance(camera.Position, horrorLightPos);
-
-            // Si el jugador se aproxima a menos de 0.5 unidades de la coordenada 3
-            if (distanceToLight < 0.5f) {
-                bodyCurrentPos = horrorLightPos; // El cuerpo se traslada inmediatamente
-                bodyMoved = true;
-            }
-        }
+        if (timeElapsed > 25.0f) horrorLightOn = true;
 
         float time = currentFrame;
         float flickerIntensity = HorrorFlicker(time);
@@ -187,7 +193,6 @@ int main()
         ourShader.setVec3("dirLight.diffuse", glm::vec3(0.0f));
         ourShader.setVec3("dirLight.specular", glm::vec3(0.0f));
 
-        // Luz 0: Luz parpadeante por defecto en el garage
         ourShader.setVec3("pointLights[0].position", flickerLightPos);
         ourShader.setVec3("pointLights[0].ambient", flickerLightColor * 0.02f * flickerIntensity);
         ourShader.setVec3("pointLights[0].diffuse", flickerLightColor * flickerIntensity);
@@ -196,11 +201,9 @@ int main()
         ourShader.setFloat("pointLights[0].linear", 0.09f);
         ourShader.setFloat("pointLights[0].quadratic", 0.032f);
 
-        // Luz 1: Luz lúgubre en la coordenada 3 (Roja y parpadeante a los 25 segundos)
         if (horrorLightOn) {
             float horrorFlicker = HorrorFlicker(currentFrame * 2.5f);
             glm::vec3 horrorLightColor = glm::vec3(0.7f, 0.05f, 0.05f);
-
             ourShader.setVec3("pointLights[1].position", horrorLightPos);
             ourShader.setVec3("pointLights[1].ambient", horrorLightColor * 0.01f * horrorFlicker);
             ourShader.setVec3("pointLights[1].diffuse", horrorLightColor * horrorFlicker);
@@ -214,9 +217,8 @@ int main()
         ourShader.setFloat("pointLights[1].linear", 0.14f);
         ourShader.setFloat("pointLights[1].quadratic", 0.07f);
 
-        // Desactivamos el resto de las luces del arreglo (2 y 3)
-        for (int i = 2; i < 4; i++)
-        {
+        // Apagar luces extra si las hay
+        for (int i = 2; i < 4; i++) {
             std::string base = "pointLights[" + std::to_string(i) + "].";
             ourShader.setVec3(base + "position", glm::vec3(0.0f));
             ourShader.setVec3(base + "ambient", glm::vec3(0.0f));
@@ -227,16 +229,21 @@ int main()
             ourShader.setFloat(base + "quadratic", 0.032f);
         }
 
-        ourShader.setVec3("spotLight.position", camera.Position);
+        // =========================================================================
+        // LÓGICA DE LA LINTERNA 
+        // =========================================================================
+        glm::vec3 handOffset = (camera.Right * linternaOffsetX) + (camera.Up * linternaOffsetY) + (camera.Front * linternaOffsetZ);
+        glm::vec3 currentLinternaPos = camera.Position + handOffset;
+
+        ourShader.setVec3("spotLight.position", currentLinternaPos);
         ourShader.setVec3("spotLight.direction", camera.Front);
-        if (flashlightOn)
-        {
+
+        if (flashlightOn) {
             ourShader.setVec3("spotLight.ambient", glm::vec3(0.0f));
             ourShader.setVec3("spotLight.diffuse", glm::vec3(1.0f, 1.0f, 0.9f));
             ourShader.setVec3("spotLight.specular", glm::vec3(1.0f, 1.0f, 0.9f));
         }
-        else
-        {
+        else {
             ourShader.setVec3("spotLight.ambient", glm::vec3(0.0f));
             ourShader.setVec3("spotLight.diffuse", glm::vec3(0.0f));
             ourShader.setVec3("spotLight.specular", glm::vec3(0.0f));
@@ -246,6 +253,10 @@ int main()
         ourShader.setFloat("spotLight.quadratic", 0.032f);
         ourShader.setFloat("spotLight.cutOff", glm::cos(glm::radians(12.5f)));
         ourShader.setFloat("spotLight.outerCutOff", glm::cos(glm::radians(17.5f)));
+
+        // =========================================================================
+        // DIBUJADO DE MODELOS
+        // =========================================================================
 
         // 1) EL GARAGE 
         glm::mat4 garageMat = glm::mat4(1.0f);
@@ -258,18 +269,65 @@ int main()
         if (crimeSceneRender) {
             glm::mat4 crimeSceneMat = glm::mat4(1.0f);
             crimeSceneMat = glm::translate(crimeSceneMat, crimeScenePos);
-            crimeSceneMat = glm::scale(crimeSceneMat, glm::vec3(crimeSceneScale)); // Escala disminuida
+            crimeSceneMat = glm::scale(crimeSceneMat, glm::vec3(crimeSceneScale));
             ourShader.setMat4("model", crimeSceneMat);
             crimeSceneModel.Draw(ourShader);
         }
 
-        // 3) MODELO BODY (Con ajustes de posición, escala disminuida y rotación)
+        // 3) MODELO BODY 
         glm::mat4 bodyMat = glm::mat4(1.0f);
-        bodyMat = glm::translate(bodyMat, bodyCurrentPos);
-        bodyMat = glm::rotate(bodyMat, glm::radians(bodyRotationY), glm::vec3(0.0f, 1.0f, 0.0f)); // Rotación aplicada
+        bodyMat = glm::translate(bodyMat, bodyOriginalPos);
+        bodyMat = glm::rotate(bodyMat, glm::radians(bodyRotationY), glm::vec3(0.0f, 1.0f, 0.0f));
         bodyMat = glm::scale(bodyMat, glm::vec3(bodyScale));
         ourShader.setMat4("model", bodyMat);
         bodyModel.Draw(ourShader);
+
+        // 4) MODELO LLANTAS
+        glm::mat4 llantasMat = glm::mat4(1.0f);
+        llantasMat = glm::translate(llantasMat, llantasPos);
+        llantasMat = glm::scale(llantasMat, glm::vec3(llantasScale));
+        ourShader.setMat4("model", llantasMat);
+        llantasModel.Draw(ourShader);
+
+        // 5) MODELO MONSTRUO
+        glm::vec3 direction = camera.Position - monsterPos;
+        direction.y = 0.0f;
+
+        if (glm::length(direction) > 0.05f)
+        {
+            direction = glm::normalize(direction);
+            monsterPos += direction * monsterSpeed * deltaTime;
+        }
+
+        float monsterRotationY = glm::degrees(glm::atan(direction.x, direction.z));
+
+        glm::mat4 monsterMat = glm::mat4(1.0f);
+        monsterMat = glm::translate(monsterMat, monsterPos);
+        monsterMat = glm::rotate(monsterMat, glm::radians(monsterRotationY), glm::vec3(0.0f, 1.0f, 0.0f));
+        monsterMat = glm::scale(monsterMat, glm::vec3(monsterScale));
+        ourShader.setMat4("model", monsterMat);
+        monsterModel.Draw(ourShader);
+
+        // 6) MODELO DE LA LINTERNA EN LA MANO
+        if (flashlightOn) {
+            glm::mat4 linternaMat = glm::mat4(1.0f);
+            linternaMat = glm::translate(linternaMat, currentLinternaPos);
+
+            // Rotación automática para seguir la mirada de la cámara
+            linternaMat = glm::rotate(linternaMat, glm::radians(-camera.Yaw - 90.0f), glm::vec3(0.0f, 1.0f, 0.0f));
+            linternaMat = glm::rotate(linternaMat, glm::radians(camera.Pitch), glm::vec3(1.0f, 0.0f, 0.0f));
+
+            // CORRECCIONES MANUALES DE ROTACIÓN (usa las variables de arriba si el modelo apunta mal)
+            linternaMat = glm::rotate(linternaMat, glm::radians(linternaFixRotX), glm::vec3(1.0f, 0.0f, 0.0f));
+            linternaMat = glm::rotate(linternaMat, glm::radians(linternaFixRotY), glm::vec3(0.0f, 1.0f, 0.0f));
+            linternaMat = glm::rotate(linternaMat, glm::radians(linternaFixRotZ), glm::vec3(0.0f, 0.0f, 1.0f));
+
+            // Escala definitiva de la linterna
+            linternaMat = glm::scale(linternaMat, glm::vec3(linternaScale));
+
+            ourShader.setMat4("model", linternaMat);
+            linternaModel.Draw(ourShader);
+        }
 
         glfwSwapBuffers(window);
         glfwPollEvents();
@@ -289,11 +347,11 @@ void ClampPlayerToGarage()
 float HorrorFlicker(float time)
 {
     float baseIntensity = 0.35f;
-    float cycleTime = fmod(time, 180.0f);
+    float cycleTime = glm::mod(time, 180.0f);
 
     if (cycleTime < 0.6f)
     {
-        float flicker = sin(cycleTime * 60.0f);
+        float flicker = glm::sin(cycleTime * 60.0f);
         return (flicker > 0.0f) ? baseIntensity * 0.15f : baseIntensity;
     }
 
@@ -337,9 +395,12 @@ void processInput(GLFWwindow* window)
         ClampPlayerToGarage();
     }
 
+    // --- LÓGICA DE INTERACCIÓN DE LA LINTERNA (TOGGLE LIMPIO) ---
     bool fPressed = glfwGetKey(window, GLFW_KEY_F) == GLFW_PRESS;
     if (fPressed && !fKeyPressedLastFrame)
+    {
         flashlightOn = !flashlightOn;
+    }
     fKeyPressedLastFrame = fPressed;
 }
 

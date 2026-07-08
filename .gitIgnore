@@ -369,3 +369,19 @@ Release/
 *.aps
 *.VC.db
 *.VC.opendb
+
+# =========================================================================
+# OpenGL & C++ Custom Assets / Dependencies Settings
+# =========================================================================
+
+# Formatos de modelos 3D y texturas pesadas (comunes en OpenGL)
+*.obj
+*.mtl
+*.fbx
+*.dae
+*.gltf
+*.glb
+*.png
+*.jpg
+*.tga
+*.bmp

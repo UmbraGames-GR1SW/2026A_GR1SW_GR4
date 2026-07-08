@@ -215,13 +215,20 @@ unsigned int TextureFromFile(const char *path, const string &directory, bool gam
     unsigned char *data = stbi_load(filename.c_str(), &width, &height, &nrComponents, 0);
     if (data)
     {
-        GLenum format;
+        GLenum format = GL_RGB; // valor por defecto seguro
         if (nrComponents == 1)
             format = GL_RED;
+        else if (nrComponents == 2)
+            format = GL_RG;
         else if (nrComponents == 3)
             format = GL_RGB;
         else if (nrComponents == 4)
             format = GL_RGBA;
+        else {
+            std::cerr << "Unexpected nrComponents: " << nrComponents << " for file: " << filename << std::endl;
+            stbi_image_free(data);
+            return 0;
+        }
 
         glBindTexture(GL_TEXTURE_2D, textureID);
         glTexImage2D(GL_TEXTURE_2D, 0, format, width, height, 0, format, GL_UNSIGNED_BYTE, data);
