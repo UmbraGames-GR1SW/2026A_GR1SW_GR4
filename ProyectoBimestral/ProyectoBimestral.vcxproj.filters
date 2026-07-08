@@ -16,6 +16,9 @@
     <Filter Include="Archivos de origen\shaders">
       <UniqueIdentifier>{0668126f-653e-4aed-a759-08c8e137eccb}</UniqueIdentifier>
     </Filter>
+    <Filter Include="Archivos de origen\fonts">
+      <UniqueIdentifier>{217caa93-ee55-47cc-9af4-04a97b14fc12}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="Scene_Anahi.cpp">
@@ -32,5 +35,27 @@
     <None Include="shaders\Fragment_Anahi.fs">
       <Filter>Archivos de origen\shaders</Filter>
     </None>
+    <None Include="shaders\text.fs">
+      <Filter>Archivos de origen\shaders</Filter>
+    </None>
+    <None Include="shaders\text.vs">
+      <Filter>Archivos de origen\shaders</Filter>
+    </None>
+    <None Include="shaders\box.fs">
+      <Filter>Archivos de origen\shaders</Filter>
+    </None>
+    <None Include="shaders\box.vs">
+      <Filter>Archivos de origen\shaders</Filter>
+    </None>
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="text_renderer.h">
+      <Filter>Archivos de origen</Filter>
+    </ClInclude>
+  </ItemGroup>
+  <ItemGroup>
+    <Font Include="fonts\BlackOpsOne-Regular.ttf">
+      <Filter>Archivos de origen\fonts</Filter>
+    </Font>
   </ItemGroup>
 </Project>

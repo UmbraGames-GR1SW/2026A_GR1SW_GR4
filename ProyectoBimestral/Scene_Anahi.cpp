@@ -12,6 +12,10 @@
 #include <iostream>
 #include <cmath>
 #include <random> // Para el efecto de temblor inquietante
+#include <string>
+#include <algorithm>
+
+#include "text_renderer.h" // <-- HUD de texto 2D
 
 #define STB_IMAGE_IMPLEMENTATION
 #include "learnopengl/stb_image.h" 
@@ -45,8 +49,19 @@ float lastFrame = 0.0f;
 bool flashlightOn = true;
 bool fKeyPressedLastFrame = false;
 
+// -----------------------------------------------------------------------------
+// Estado de la pantalla de bienvenida
+// -----------------------------------------------------------------------------
+bool juegoIniciado = false;
+bool enterPressedLastFrame = false;
+
 // Configuración de iluminación ambiental
 glm::vec3 colorLuzTecho = glm::vec3(0.75f, 0.75f, 0.7f);
+
+// =====================================================================================
+// HUD: RENDERER DE TEXTO 2D
+// =====================================================================================
+TextRenderer* textRenderer = nullptr;
 
 // =====================================================================================
 // VARIABLES GLOBALES - COORDENADAS ESTÁTICAS DEL PAYASO
@@ -58,31 +73,30 @@ const float CLOWN_FEET_OFFSET = 8.926056f;
 // =====================================================================================
 // VARIABLES GLOBALES - COORDENADAS ESTÁTICAS DE CHUKY
 // =====================================================================================
-// Colocado cerca de la puerta del garage (zona de Z positivo, cerca del spawn
-// de la cámara en z=4.0), en una esquina para no tapar la salida.
-// Ajusta X/Z según lo que veas al correr el juego: el .obj no trae la puerta
-// etiquetada, así que esto es una aproximación basada en el bounding box del cuarto.
 glm::vec3 chukyPosition = glm::vec3(-6.0f, 0.0f, 1.8f);
-float chukyScale = 1.0f;              // El modelo ya viene casi a escala real (~1.47u de alto)
-const float CHUKY_FEET_OFFSET = 0.00636f; // Corrige que los pies del modelo están ligeramente bajo y=0
+float chukyScale = 1.0f;
+const float CHUKY_FEET_OFFSET = 0.00636f;
 
 // =====================================================================================
 // VARIABLES GLOBALES - HACHA (PROP ESTÁTICO EN EL CENTRO DE LA HABITACIÓN)
 // =====================================================================================
-// Centro real calculado del bounding box del garaje (X: -9.5 a 7.0, Z: -5.17 a 5.17)
 glm::vec3 hachaPosition = glm::vec3(4.5f, 0.0f, 0.0f);
-float hachaScale = 4.0f;   // Escalado x6 (~2.2u de alto) para que se vea grande e imponente
-float hachaRotationY = glm::radians(25.0f); // Rotación fija para que no quede "cuadrada"
+float hachaScale = 4.0f;
+float hachaRotationY = glm::radians(25.0f);
 
 // =====================================================================================
 // VARIABLES GLOBALES - CINTA DE PELIGRO (PROP ESTÁTICO BLOQUEANDO LA PUERTA)
 // =====================================================================================
-// Colocada cruzando la puerta doble del garage (misma zona Z positiva que Chuky).
-// El modelo está centrado en Y (no apoyado en el piso), así que la posición Y
-// controla directamente la ALTURA a la que cruza la cinta (aprox. cintura/pecho).
 glm::vec3 dangerPosition = glm::vec3(-6.0f, 1.0f, -3.5f);
 float dangerScale = 1.0f;
-float dangerRotationY = glm::radians(90.0f); // gírala si la cinta no queda de frente a la puerta
+float dangerRotationY = glm::radians(50.0f);
+
+// =====================================================================================
+// VARIABLES GLOBALES - MÁSCARA (PROP ESTÁTICO DECORATIVO CONTRA LA PARED)
+// =====================================================================================
+glm::vec3 mascaraPosition = glm::vec3(-9.0f, 0.0f, 0.0f);
+float mascaraScale = 1.0f;
+float mascaraRotationY = glm::radians(90.0f);
 
 int main()
 {
@@ -111,7 +125,16 @@ int main()
 
     glEnable(GL_DEPTH_TEST);
 
-    stbi_set_flip_vertically_on_load(true);
+    stbi_set_flip_vertically_on_load(false);
+
+    // -----------------------------------------------------------------------------
+    // Inicializar el HUD de texto (requiere contexto OpenGL + GLAD ya cargados)
+    // -----------------------------------------------------------------------------
+    textRenderer = new TextRenderer(SCR_WIDTH, SCR_HEIGHT);
+    if (!textRenderer->Load("fonts/BlackOpsOne-Regular.ttf", 48)) // <-- ajusta la ruta a tu .ttf
+    {
+        std::cout << "ADVERTENCIA: No se pudo cargar la fuente del HUD" << std::endl;
+    }
 
     Shader ourShader("shaders/Vertex_Anahi.vs", "shaders/Fragment_Anahi.fs");
 
@@ -121,6 +144,7 @@ int main()
     Model chukyModel("./model/chuky/chuky.obj");
     Model hachaModel("./model/hacha/hacha.obj");
     Model dangerModel("./model/danger/danger.obj");
+    Model mascaraModel("./model/mascara/mascara.obj");
 
     camera.MovementSpeed = 2.5f;
 
@@ -326,10 +350,69 @@ int main()
         ourShader.setMat4("model", dangerMat);
         dangerModel.Draw(ourShader);
 
+        // -----------------------------------------------------------------------------
+        // DIBUJAR PROP: LA MÁSCARA (ESTÁTICA, DECORACIÓN DE PARED)
+        // -----------------------------------------------------------------------------
+        glm::mat4 mascaraMat = glm::mat4(1.0f);
+        mascaraMat = glm::translate(mascaraMat, mascaraPosition);
+        mascaraMat = glm::rotate(mascaraMat, mascaraRotationY, glm::vec3(0.0f, 1.0f, 0.0f));
+        mascaraMat = glm::scale(mascaraMat, glm::vec3(mascaraScale));
+
+        ourShader.setMat4("model", mascaraMat);
+        mascaraModel.Draw(ourShader);
+
+        // -----------------------------------------------------------------------------
+        // HUD: TEXTO 2D ENCIMA DE LA ESCENA (siempre AL FINAL, antes de SwapBuffers)
+        // -----------------------------------------------------------------------------
+        std::string estadoLinterna = flashlightOn ? "Linterna: ON" : "Linterna: OFF";
+        textRenderer->RenderText(estadoLinterna, 10.0f, SCR_HEIGHT - 30.0f, 0.5f, glm::vec3(1.0f, 1.0f, 1.0f));
+
+        // Pantalla de bienvenida: se muestra hasta que el jugador presiona ENTER
+        if (!juegoIniciado)
+        {
+            std::string linea1 = "Bienvenido a la sala mas miedosa";
+            std::string linea2 = "Logra pasarla sin asustarte para salir";
+            std::string linea3 = "Presiona ENTER para continuar";
+
+            float scale1 = 0.7f;
+            float scale2 = 0.6f;
+            float scale3 = 0.6f;
+
+            float ancho1 = textRenderer->GetTextWidth(linea1, scale1);
+            float ancho2 = textRenderer->GetTextWidth(linea2, scale2);
+            float ancho3 = textRenderer->GetTextWidth(linea3, scale3);
+
+            // Fondo semi-transparente detrás de las 3 líneas para mejorar la lectura
+            float anchoMaximo = std::max({ ancho1, ancho2, ancho3 });
+            float paddingX = 40.0f;
+            float paddingY = 30.0f;
+            float cajaAncho = anchoMaximo + paddingX * 2.0f;
+            float cajaAlto = 150.0f + paddingY;
+            float cajaX = (SCR_WIDTH - cajaAncho) / 2.0f;
+            float cajaY = SCR_HEIGHT / 2.0f - 55.0f;
+
+            textRenderer->RenderQuad(cajaX, cajaY, cajaAncho, cajaAlto, glm::vec3(0.0f, 0.0f, 0.0f), 0.55f);
+
+            textRenderer->RenderText(linea1, (SCR_WIDTH - ancho1) / 2.0f, SCR_HEIGHT / 2.0f + 60.0f, scale1, glm::vec3(0.85f, 0.0f, 0.0f));
+            textRenderer->RenderText(linea2, (SCR_WIDTH - ancho2) / 2.0f, SCR_HEIGHT / 2.0f + 15.0f, scale2, glm::vec3(0.85f, 0.0f, 0.0f));
+
+            // "Presiona ENTER" parpadea para llamar la atención (rojo mas oscuro)
+            float parpadeo = (sin(currentFrame * 4.0f) > 0.0f) ? 1.0f : 0.3f;
+            textRenderer->RenderText(linea3, (SCR_WIDTH - ancho3) / 2.0f, SCR_HEIGHT / 2.0f - 40.0f, scale3, glm::vec3(0.4f, 0.0f, 0.0f) * parpadeo);
+        }
+
+        if (jumpscareActivo)
+        {
+            std::string msg = "!!!";
+            float ancho = textRenderer->GetTextWidth(msg, 1.5f);
+            textRenderer->RenderText(msg, (SCR_WIDTH - ancho) / 2.0f, SCR_HEIGHT / 2.0f, 1.5f, glm::vec3(1.0f, 0.0f, 0.0f));
+        }
+
         glfwSwapBuffers(window);
         glfwPollEvents();
     }
 
+    delete textRenderer;
     glfwTerminate();
     return 0;
 }
@@ -354,6 +437,16 @@ void processInput(GLFWwindow* window)
 {
     if (glfwGetKey(window, GLFW_KEY_ESCAPE) == GLFW_PRESS)
         glfwSetWindowShouldClose(window, true);
+
+    // Detectar ENTER para iniciar el juego (solo se activa una vez)
+    bool enterPressed = glfwGetKey(window, GLFW_KEY_ENTER) == GLFW_PRESS;
+    if (enterPressed && !enterPressedLastFrame && !juegoIniciado)
+        juegoIniciado = true;
+    enterPressedLastFrame = enterPressed;
+
+    // Si todavía no se presiona ENTER, no se procesa movimiento
+    if (!juegoIniciado)
+        return;
 
     isMoving = false;
 
