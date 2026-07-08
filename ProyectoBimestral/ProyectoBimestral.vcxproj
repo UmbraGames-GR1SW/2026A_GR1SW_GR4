@@ -151,8 +151,18 @@
     <ClCompile Include="Scene_Anahi.cpp" />
   </ItemGroup>
   <ItemGroup>
+    <None Include="shaders\box.fs" />
+    <None Include="shaders\box.vs" />
     <None Include="shaders\Fragment_Anahi.fs" />
+    <None Include="shaders\text.fs" />
+    <None Include="shaders\text.vs" />
     <None Include="shaders\Vertex_Anahi.vs" />
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="text_renderer.h" />
+  </ItemGroup>
+  <ItemGroup>
+    <Font Include="fonts\BlackOpsOne-Regular.ttf" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
