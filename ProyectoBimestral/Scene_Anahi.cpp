@@ -74,6 +74,16 @@ glm::vec3 hachaPosition = glm::vec3(4.5f, 0.0f, 0.0f);
 float hachaScale = 4.0f;   // Escalado x6 (~2.2u de alto) para que se vea grande e imponente
 float hachaRotationY = glm::radians(25.0f); // Rotación fija para que no quede "cuadrada"
 
+// =====================================================================================
+// VARIABLES GLOBALES - CINTA DE PELIGRO (PROP ESTÁTICO BLOQUEANDO LA PUERTA)
+// =====================================================================================
+// Colocada cruzando la puerta doble del garage (misma zona Z positiva que Chuky).
+// El modelo está centrado en Y (no apoyado en el piso), así que la posición Y
+// controla directamente la ALTURA a la que cruza la cinta (aprox. cintura/pecho).
+glm::vec3 dangerPosition = glm::vec3(-6.0f, 1.0f, -3.5f);
+float dangerScale = 1.0f;
+float dangerRotationY = glm::radians(90.0f); // gírala si la cinta no queda de frente a la puerta
+
 int main()
 {
     glfwInit();
@@ -110,6 +120,7 @@ int main()
     Model clownModel("./model/payaso/payaso.obj");
     Model chukyModel("./model/chuky/chuky.obj");
     Model hachaModel("./model/hacha/hacha.obj");
+    Model dangerModel("./model/danger/danger.obj");
 
     camera.MovementSpeed = 2.5f;
 
@@ -303,6 +314,17 @@ int main()
 
         ourShader.setMat4("model", hachaMat);
         hachaModel.Draw(ourShader);
+
+        // -----------------------------------------------------------------------------
+        // DIBUJAR PROP: CINTA DE PELIGRO (ESTÁTICA, BLOQUEANDO LA PUERTA)
+        // -----------------------------------------------------------------------------
+        glm::mat4 dangerMat = glm::mat4(1.0f);
+        dangerMat = glm::translate(dangerMat, dangerPosition);
+        dangerMat = glm::rotate(dangerMat, dangerRotationY, glm::vec3(0.0f, 1.0f, 0.0f));
+        dangerMat = glm::scale(dangerMat, glm::vec3(dangerScale));
+
+        ourShader.setMat4("model", dangerMat);
+        dangerModel.Draw(ourShader);
 
         glfwSwapBuffers(window);
         glfwPollEvents();
