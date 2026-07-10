@@ -16,6 +16,7 @@
 #include <iostream>
 #include <string>
 #include <cstdlib>
+#include <learnopengl/audio.h>
 
 #define STB_IMAGE_IMPLEMENTATION
 #include <learnopengl/stb_image.h>
@@ -90,7 +91,7 @@ float monsterScale = 0.10f;
 // =====================================================================================
 // *** PANEL DE CONTROL DEL MONSTRUO 
 // =====================================================================================
-float jumpscareTriggerTime = 25.0f; // Segundos antes de que aparezca
+float jumpscareTriggerTime = 28.0f; // Segundos antes de que aparezca (Actualizado a 22s)
 bool jumpscareActive = false;
 bool jumpscareFinished = false;
 float jumpscareTimer = 0.0f;
@@ -99,6 +100,15 @@ float monsterHeightOffset = -0.205f;
 
 // Ajusta qué tan cerca está de tu cara (menor número = más cerca)
 float monsterDistanceOffset = 0.22f;
+
+// Variables de control de audio y secuencias actualizadas
+bool fondoPlayed = false;
+bool phoneRingPlayed = false;
+bool phoneCallPlayed = false;
+
+// Control de la luz roja de los teléfonos
+bool phoneRedLightOn = false;
+float phoneRedLightTimer = 0.0f;
 
 // =====================================================================================
 // *** PANEL DE CONTROL DE LA LINTERNA 
@@ -145,6 +155,11 @@ int main()
 
     glEnable(GL_DEPTH_TEST);
 
+    // =========================================================================
+    // INICIALIZACIÓN DEL SISTEMA DE AUDIO
+    // =========================================================================
+    initaudio();
+
     Shader ourShader("shaders/Vertex_Samy.vs", "shaders/Fragment_Samy.fs");
 
     // ---- CARGA DE MODELOS ----
@@ -176,7 +191,7 @@ int main()
         frameCount++;
         if (currentFrame - previousTime >= 1.0f)
         {
-            std::string title = "Garage F1 - Horror Scene | FPS: " + std::to_string(frameCount);
+            std::string title = "Garage | FPS: " + std::to_string(frameCount);
             glfwSetWindowTitle(window, title.c_str());
             frameCount = 0;
             previousTime = currentFrame;
@@ -185,8 +200,43 @@ int main()
         timeElapsed += deltaTime;
         processInput(window);
 
+        // 1. El audio de fondo inicia INMEDIATAMENTE al cargarse la escena
+        if (!fondoPlayed && timeElapsed >= 0.0f)
+        {
+            playsound("music/Fondo.mp3", 0);
+            fondoPlayed = true;
+        }
+
+        // 2. Phone Ring + Encendido de Luz Roja (A los 15 segundos - dura 5s)
+        if (!phoneRingPlayed && timeElapsed >= 15.0f)
+        {
+            haltmusic(); // Detiene el ambiente de fondo de forma limpia
+            playsound("music/phone ring.mp3", 0);
+            phoneRingPlayed = true;
+            phoneRedLightOn = true; // Empieza el temporizador de la luz roja
+            phoneRedLightTimer = 0.0f;
+        }
+
+        // 3. Phone Call (A los 20 segundos - dura 5s originales, pero se corta a los 22s por el susto)
+        if (phoneRingPlayed && !phoneCallPlayed && timeElapsed >= 20.0f)
+        {
+            haltmusic(); // Corta el tono de timbrado
+            playsound("music/phone call.mp3", 0);
+            phoneCallPlayed = true;
+        }
+
+        // Temporizador para apagar la luz roja después de 10 segundos totales (de los 15s a los 25s)
+        if (phoneRedLightOn)
+        {
+            phoneRedLightTimer += deltaTime;
+            if (phoneRedLightTimer >= 10.0f)
+            {
+                phoneRedLightOn = false;
+            }
+        }
+
         // =========================================================================
-        // CONTROL CINEMÁTICO DEL JUMPSCARE
+        // CONTROL CINEMÁTICO DEL JUMPSCARE (A los 22 segundos exactos)
         // =========================================================================
         if (!jumpscareActive && !jumpscareFinished && timeElapsed >= jumpscareTriggerTime)
         {
@@ -196,25 +246,33 @@ int main()
 
             backupFlashlightState = flashlightOn;
             flashlightOn = false;
+
+            // Corta la llamada bruscamente para meter el efecto de impacto
+            haltmusic();
+            playsound("music/suspenso.mp3", 0);
         }
 
         if (jumpscareActive)
         {
             jumpscareTimer += deltaTime;
-
             monsterPos = camera.Position + (camera.Front * monsterDistanceOffset) + (camera.Up * monsterHeightOffset);
 
- 
-            if (jumpscareTimer >= 1.5f)
+            // Desaparece el monstruo a los 1.2 segundos exactos
+            if (jumpscareTimer >= 1.2f)
             {
                 jumpscareActive = false;
                 jumpscareFinished = true;
                 horrorLightOn = false;
                 monsterPos = glm::vec3(0.00f, -50.0f, -0.5f);
                 flashlightOn = backupFlashlightState;
+
+                haltmusic(); // Silencio total y tenso tras desaparecer el monstruo
             }
         }
 
+        // =========================================================================
+        // RENDERIZADO Y CONTROL DE SHADERS
+        // =========================================================================
         float time = currentFrame;
         float flickerIntensity = HorrorFlicker(time);
 
@@ -260,26 +318,38 @@ int main()
         ourShader.setFloat("pointLights[0].linear", 0.09f);
         ourShader.setFloat("pointLights[0].quadratic", 0.032f);
 
-        // --- PUNTO DE LUZ 1 (Luz roja en la cara del Monstruo) ---
-        if (horrorLightOn && jumpscareActive) {
+        // --- PUNTO DE LUZ 1 (Luz del Monstruo O Luz Roja del Teléfono) ---
+        if (horrorLightOn && jumpscareActive)
+        {
             float horrorFlicker = HorrorFlicker(currentFrame * 8.0f);
             glm::vec3 horrorLightColor = glm::vec3(0.9f, 0.0f, 0.0f);
 
-            // Iluminamos un poco más arriba de su origen si es necesario (ajustado automáticamente)
             ourShader.setVec3("pointLights[1].position", monsterPos);
             ourShader.setVec3("pointLights[1].ambient", horrorLightColor * 0.05f * horrorFlicker);
             ourShader.setVec3("pointLights[1].diffuse", horrorLightColor * horrorFlicker * 2.5f);
             ourShader.setVec3("pointLights[1].specular", horrorLightColor * horrorFlicker * 2.5f);
         }
-        else {
+        else if (phoneRedLightOn)
+        {
+            float phoneFlicker = HorrorFlicker(currentFrame * 5.0f);
+            glm::vec3 phoneLightColor = glm::vec3(0.7f, 0.0f, 0.0f);
+            glm::vec3 phoneLightPos = glm::vec3(0.0f, 0.5f, 0.0f); // Posición donde parpadea la luz de ambiente del fono
+
+            ourShader.setVec3("pointLights[1].position", phoneLightPos);
+            ourShader.setVec3("pointLights[1].ambient", phoneLightColor * 0.02f * phoneFlicker);
+            ourShader.setVec3("pointLights[1].diffuse", phoneLightColor * phoneFlicker * 1.8f);
+            ourShader.setVec3("pointLights[1].specular", phoneLightColor * phoneFlicker * 1.8f);
+        }
+        else
+        {
             ourShader.setVec3("pointLights[1].diffuse", glm::vec3(0.0f));
             ourShader.setVec3("pointLights[1].specular", glm::vec3(0.0f));
         }
         ourShader.setFloat("pointLights[1].constant", 1.0f);
-        ourShader.setFloat("pointLights[1].linear", 0.9f);
-        ourShader.setFloat("pointLights[1].quadratic", 2.5f);
+        ourShader.setFloat("pointLights[1].linear", 0.09f);
+        ourShader.setFloat("pointLights[1].quadratic", 0.032f);
 
-        // Apagar luces extra si las hay
+        // Apagar luces extra de reserva
         for (int i = 2; i < 4; i++) {
             std::string base = "pointLights[" + std::to_string(i) + "].";
             ourShader.setVec3(base + "position", glm::vec3(0.0f));
@@ -291,9 +361,7 @@ int main()
             ourShader.setFloat(base + "quadratic", 0.032f);
         }
 
-        // =========================================================================
-        // LÓGICA DE LA LINTERNA 
-        // =========================================================================
+        // --- LÓGICA DE LA LINTERNA ---
         glm::vec3 handOffset = (camera.Right * linternaOffsetX) + (camera.Up * linternaOffsetY) + (camera.Front * linternaOffsetZ);
         glm::vec3 currentLinternaPos = camera.Position + handOffset;
 
@@ -317,12 +385,11 @@ int main()
         ourShader.setFloat("spotLight.outerCutOff", glm::cos(glm::radians(17.5f)));
 
         // =========================================================================
-        // DIBUJADO DE MODELOS
+        // DIBUJADO DE MODELOS 3D
         // =========================================================================
 
         // 1) EL GARAGE 
         glm::mat4 garageMat = glm::mat4(1.0f);
-        garageMat = glm::translate(garageMat, glm::vec3(0.0f, 0.0f, 0.0f));
         garageMat = glm::scale(garageMat, glm::vec3(garageScale));
         ourShader.setMat4("model", garageMat);
         garageModel.Draw(ourShader);
@@ -351,30 +418,24 @@ int main()
         ourShader.setMat4("model", llantasMat);
         llantasModel.Draw(ourShader);
 
-        // 5) MODELO MONSTRUO
+        // 5) MODELO MONSTRUO (JUMPSCARE)
         if (jumpscareActive)
         {
             glm::mat4 monsterMat = glm::mat4(1.0f);
             monsterMat = glm::translate(monsterMat, monsterPos);
-
             monsterMat = glm::rotate(monsterMat, glm::radians(-camera.Yaw - 90.0f), glm::vec3(0.0f, 1.0f, 0.0f));
             monsterMat = glm::rotate(monsterMat, glm::radians(camera.Pitch), glm::vec3(1.0f, 0.0f, 0.0f));
-
             monsterMat = glm::scale(monsterMat, glm::vec3(monsterScale * 1.3f));
-
             ourShader.setMat4("model", monsterMat);
             monsterModel.Draw(ourShader);
         }
 
-        // 6) MODELO DE LA LINTERNA EN LA MANO
+        // 6) MODELO DE LA LINTERNA
         if (flashlightOn) {
             glm::mat4 linternaMat = glm::mat4(1.0f);
             linternaMat = glm::translate(linternaMat, currentLinternaPos);
             linternaMat = glm::rotate(linternaMat, glm::radians(-camera.Yaw - 90.0f), glm::vec3(0.0f, 1.0f, 0.0f));
             linternaMat = glm::rotate(linternaMat, glm::radians(camera.Pitch), glm::vec3(1.0f, 0.0f, 0.0f));
-            linternaMat = glm::rotate(linternaMat, glm::radians(linternaFixRotX), glm::vec3(1.0f, 0.0f, 0.0f));
-            linternaMat = glm::rotate(linternaMat, glm::radians(linternaFixRotY), glm::vec3(0.0f, 1.0f, 0.0f));
-            linternaMat = glm::rotate(linternaMat, glm::radians(linternaFixRotZ), glm::vec3(0.0f, 0.0f, 1.0f));
             linternaMat = glm::scale(linternaMat, glm::vec3(linternaScale));
             ourShader.setMat4("model", linternaMat);
             linternaModel.Draw(ourShader);
