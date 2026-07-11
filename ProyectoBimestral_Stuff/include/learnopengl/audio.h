@@ -28,7 +28,7 @@ inline void setvolume(int volume) {
     if (volume > 100) volume = 100;
     get_global_volume() = volume;
 
-    int mciVol = volume * 10;
+    int mciVol = volume * 2;
     std::string command = "setaudio sfxsound volume to " + std::to_string(mciVol);
     mciSendStringA(command.c_str(), NULL, 0, NULL);
 
@@ -53,7 +53,7 @@ inline int playsound(const char* sound, int repeat)
 
     if (err == 0) {
         // Apply current volume
-        std::string volCommand = "setaudio sfxsound volume to " + std::to_string(get_global_volume() * 10);
+        std::string volCommand = "setaudio sfxsound volume to " + std::to_string(get_global_volume() * 2);
         mciSendStringA(volCommand.c_str(), NULL, 0, NULL);
 
         if (repeat) {
@@ -83,7 +83,7 @@ inline int playmusic(const char* musicfile)
 
     if (err == 0) {
         // Apply current volume
-        std::string volCommand = "setaudio bgmusic volume to " + std::to_string(get_global_volume() * 10);
+        std::string volCommand = "setaudio bgmusic volume to " + std::to_string(get_global_volume() * 2);
         mciSendStringA(volCommand.c_str(), NULL, 0, NULL);
 
         mciSendStringA("play bgmusic repeat", NULL, 0, NULL);

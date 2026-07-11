@@ -177,12 +177,11 @@ int main()
     Shader textShader("shaders/text_samy.vs", "shaders/text_samy.fs");
 
     // ---- CARGA DE MODELOS ----
-// ---- CARGA DE MODELOS ----
     Model garageModel("./model/garage/garage.obj");
     Model crimeSceneModel("./model/crime_scene/crime_scene.obj");
     Model bodyModel("./model/body/body.obj");
     Model llantasModel("./model/llantas/llantas.obj");
-    Model monsterModel("./model/monstruo/Monstruo.obj"); 
+    Model monsterModel("./model/monstruo/Monstruo.obj");
     Model linternaModel("./model/linterna/linterna.obj");
     Model phoneModel("./model/phone/phone.obj");
     camera.MovementSpeed = debugMode ? 0.5f : 0.2f;
@@ -325,16 +324,13 @@ int main()
         // --- PUNTO DE LUZ 1 (Luz del Teléfono / Aro de Luz del Monstruo) ---
         if (jumpscareActive && horrorLightOn)
         {
-            // Tono espectral azul pálido/grisáceo frío
             glm::vec3 monsterFaceLightColor = glm::vec3(0.35f, 0.4f, 0.5f);
 
-            // Posicionamos la luz un poco por detrás del monstruo o directamente en su origen
-            ourShader.setVec3("pointLights[1].position", monsterPos);
+            ourShader.setVec3("pointLights[1].position", camera.Position);
             ourShader.setVec3("pointLights[1].ambient", monsterFaceLightColor * 0.15f);
             ourShader.setVec3("pointLights[1].diffuse", monsterFaceLightColor * 1.5f);
             ourShader.setVec3("pointLights[1].specular", monsterFaceLightColor * 0.8f);
 
-            // CORRECCIÓN DE ATENUACIÓN: Valores bajos para crear el aro/halo circular de luz en el centro
             ourShader.setFloat("pointLights[1].constant", 1.0f);
             ourShader.setFloat("pointLights[1].linear", 0.35f);
             ourShader.setFloat("pointLights[1].quadratic", 0.45f);
@@ -377,7 +373,7 @@ int main()
         glm::vec3 handOffset = (camera.Right * linternaOffsetX) + (camera.Up * linternaOffsetY) + (camera.Front * linternaOffsetZ);
         glm::vec3 currentLinternaPos = camera.Position + handOffset;
 
-        ourShader.setVec3("spotLight.position", currentLinternaPos);
+        ourShader.setVec3("spotLight.position", camera.Position);
         ourShader.setVec3("spotLight.direction", camera.Front);
 
         if (flashlightOn) {
@@ -399,39 +395,41 @@ int main()
         // =========================================================================
         // DIBUJADO DE MODELOS 3D
         // =========================================================================
-        glm::mat4 garageMat = glm::mat4(1.0f);
-        garageMat = glm::scale(garageMat, glm::vec3(garageScale));
-        ourShader.setMat4("model", garageMat);
-        garageModel.Draw(ourShader);
+        if (!jumpscareActive)
+        {
+            glm::mat4 garageMat = glm::mat4(1.0f);
+            garageMat = glm::scale(garageMat, glm::vec3(garageScale));
+            ourShader.setMat4("model", garageMat);
+            garageModel.Draw(ourShader);
 
-        if (crimeSceneRender) {
-            glm::mat4 crimeSceneMat = glm::mat4(1.0f);
-            crimeSceneMat = glm::translate(crimeSceneMat, crimeScenePos);
-            crimeSceneMat = glm::scale(crimeSceneMat, glm::vec3(crimeSceneScale));
-            ourShader.setMat4("model", crimeSceneMat);
-            crimeSceneModel.Draw(ourShader);
+            if (crimeSceneRender) {
+                glm::mat4 crimeSceneMat = glm::mat4(1.0f);
+                crimeSceneMat = glm::translate(crimeSceneMat, crimeScenePos);
+                crimeSceneMat = glm::scale(crimeSceneMat, glm::vec3(crimeSceneScale));
+                ourShader.setMat4("model", crimeSceneMat);
+                crimeSceneModel.Draw(ourShader);
+            }
+
+            glm::mat4 bodyMat = glm::mat4(1.0f);
+            bodyMat = glm::translate(bodyMat, bodyOriginalPos);
+            bodyMat = glm::rotate(bodyMat, glm::radians(bodyRotationY), glm::vec3(0.0f, 1.0f, 0.0f));
+            bodyMat = glm::scale(bodyMat, glm::vec3(bodyScale));
+            ourShader.setMat4("model", bodyMat);
+            bodyModel.Draw(ourShader);
+
+            glm::mat4 llantasMat = glm::mat4(1.0f);
+            llantasMat = glm::translate(llantasMat, llantasPos);
+            llantasMat = glm::scale(llantasMat, glm::vec3(llantasScale));
+            ourShader.setMat4("model", llantasMat);
+            llantasModel.Draw(ourShader);
+
+            glm::mat4 phoneMat = glm::mat4(1.0f);
+            phoneMat = glm::translate(phoneMat, phonePos);
+            phoneMat = glm::scale(phoneMat, glm::vec3(phoneScale));
+            ourShader.setMat4("model", phoneMat);
+            phoneModel.Draw(ourShader);
         }
-
-        glm::mat4 bodyMat = glm::mat4(1.0f);
-        bodyMat = glm::translate(bodyMat, bodyOriginalPos);
-        bodyMat = glm::rotate(bodyMat, glm::radians(bodyRotationY), glm::vec3(0.0f, 1.0f, 0.0f));
-        bodyMat = glm::scale(bodyMat, glm::vec3(bodyScale));
-        ourShader.setMat4("model", bodyMat);
-        bodyModel.Draw(ourShader);
-
-        glm::mat4 llantasMat = glm::mat4(1.0f);
-        llantasMat = glm::translate(llantasMat, llantasPos);
-        llantasMat = glm::scale(llantasMat, glm::vec3(llantasScale));
-        ourShader.setMat4("model", llantasMat);
-        llantasModel.Draw(ourShader);
-
-        glm::mat4 phoneMat = glm::mat4(1.0f);
-        phoneMat = glm::translate(phoneMat, phonePos);
-        phoneMat = glm::scale(phoneMat, glm::vec3(phoneScale));
-        ourShader.setMat4("model", phoneMat);
-        phoneModel.Draw(ourShader);
-
-        if (jumpscareActive)
+        else
         {
             glm::mat4 monsterMat = glm::mat4(1.0f);
             monsterMat = glm::translate(monsterMat, monsterPos);
@@ -466,10 +464,9 @@ int main()
             RenderText(textShader, "F: prender/apagar linterna", 50.0f, startY - 4 * stepY, 0.5f, glm::vec3(1.0f, 1.0f, 1.0f), (float)SCR_WIDTH, (float)SCR_HEIGHT);
             RenderText(textShader, "C: contestar", 50.0f, startY - 5 * stepY, 0.5f, glm::vec3(1.0f, 1.0f, 1.0f), (float)SCR_WIDTH, (float)SCR_HEIGHT);
             RenderText(textShader, "M: ocultar/mostrar Menu", 50.0f, startY - 6 * stepY, 0.5f, glm::vec3(1.0f, 1.0f, 1.0f), (float)SCR_WIDTH, (float)SCR_HEIGHT);
-            RenderText(textShader, "Barra espaciadora: correr", 50.0f, startY - 7 * stepY, 0.5f, glm::vec3(1.0f, 1.0f, 1.0f), (float)SCR_WIDTH, (float)SCR_HEIGHT);
 
             std::string volText = "Volumen Musica: " + std::to_string(get_global_volume()) + "% (Flecha Arriba/Abajo)";
-            RenderText(textShader, volText, 50.0f, startY - 8 * stepY, 0.5f, glm::vec3(0.0f, 1.0f, 0.5f), (float)SCR_WIDTH, (float)SCR_HEIGHT);
+            RenderText(textShader, volText, 50.0f, startY - 7 * stepY, 0.5f, glm::vec3(0.0f, 1.0f, 0.5f), (float)SCR_WIDTH, (float)SCR_HEIGHT);
         }
 
         if (nearPhone && !callAnswered)
@@ -515,9 +512,8 @@ float HorrorFlicker(float time)
 
 void processInput(GLFWwindow* window)
 {
-    bool spacePressed = glfwGetKey(window, GLFW_KEY_SPACE) == GLFW_PRESS;
     float baseSpeed = debugMode ? 0.5f : 0.2f;
-    camera.MovementSpeed = spacePressed ? (baseSpeed * 2.0f) : baseSpeed;
+    camera.MovementSpeed = baseSpeed;
 
     // Control de volumen de la musica (flechas arriba y abajo)
     bool upPressed = glfwGetKey(window, GLFW_KEY_UP) == GLFW_PRESS;

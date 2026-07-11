@@ -43,6 +43,9 @@ uniform PointLight pointLights[NR_POINT_LIGHTS];
 uniform SpotLight spotLight;
 
 
+uniform vec3 materialColor;
+uniform bool useMaterialColor;
+
 uniform sampler2D texture_diffuse1;
 const float shininess = 16.0;
 
@@ -54,7 +57,23 @@ vec3 CalcSpotLight(SpotLight light, vec3 normal, vec3 fragPos, vec3 viewDir, vec
 
 void main()
 {
-    vec3 texColor = vec3(texture(texture_diffuse1, TexCoords));
+    vec3 texColor;
+    if (useMaterialColor)
+    {
+        texColor = max(materialColor, vec3(0.08));
+    }
+    else
+    {
+        texColor = vec3(texture(texture_diffuse1, TexCoords));
+    }
+
+    // Si es una malla de color de material muy claro (como los ojos/dientes blancos del monstruo),
+    // la pintamos directamente con brillo plano (auto-iluminación).
+    if (useMaterialColor && materialColor.r > 0.8 && materialColor.g > 0.8 && materialColor.b > 0.8)
+    {
+        FragColor = vec4(materialColor, 1.0);
+        return;
+    }
 
     if (debugFullBright)
     {
