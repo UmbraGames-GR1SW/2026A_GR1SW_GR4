@@ -17,6 +17,7 @@
 #include <string>
 #include <cstdlib>
 #include <learnopengl/audio.h>
+#include <learnopengl/text_renderer.h>
 
 #define STB_IMAGE_IMPLEMENTATION
 #include <learnopengl/stb_image.h>
@@ -29,8 +30,8 @@ void ClampPlayerToGarage();
 float HorrorFlicker(float time);
 
 // settings
-const unsigned int SCR_WIDTH = 2560;
-const unsigned int SCR_HEIGHT = 1600;
+const unsigned int SCR_WIDTH = 1920;
+const unsigned int SCR_HEIGHT = 1080;
 
 // -------------------------------------------------------------------------------------
 // PERSONAJE / CAMARA
@@ -68,6 +69,10 @@ bool fKeyPressedLastFrame = false;
 bool debugMode = false;
 bool pKeyPressedLastFrame = false;
 bool cKeyPressedLastFrame = false;
+bool showMenu = true;
+bool mKeyPressedLastFrame = false;
+bool upKeyPressedLastFrame = false;
+bool downKeyPressedLastFrame = false;
 
 bool backupFlashlightState = true;
 
@@ -80,16 +85,15 @@ bool horrorLightOn = false;
 glm::vec3 crimeScenePos = glm::vec3(-0.05f, -0.228f, 0.60f);
 glm::vec3 bodyOriginalPos = glm::vec3(-0.08f, -0.22f, 0.50f);
 glm::vec3 llantasPos = glm::vec3(0.08f, -0.19f, -0.9f);
-glm::vec3 monsterPos = glm::vec3(0.00f, -50.0f, -0.5f);
+glm::vec3 monsterPos = glm::vec3(0.00f, 50.0f, -0.5f);
 glm::vec3 phonePos = glm::vec3(-0.4f, 0.03f, -0.9f);
-
 
 // AJUSTES DE ESCALA Y ROTACIÓN GENERAL
 float bodyScale = 0.018f;
 float crimeSceneScale = 0.082f;
 float bodyRotationY = -45.0f;
 float llantasScale = 0.1f;
-float monsterScale = 0.10f;
+float monsterScale = 0.07f;
 float phoneScale = 0.0016f;
 
 // =====================================================================================
@@ -100,7 +104,7 @@ bool jumpscareFinished = false;
 float jumpscareTimer = 0.0f;
 
 float monsterHeightOffset = -0.205f;
-float monsterDistanceOffset = 0.22f;
+float monsterDistanceOffset = 0.20f;
 
 // Variables de control de audio y secuencias
 bool fondoPlayed = false;
@@ -111,14 +115,15 @@ bool callAnswered = false;
 
 float phoneCallTimer = 0.0f;
 
-// Control del mensaje en pantalla (1.0 segundo)
-bool messageTriggered = false;
-float messageTimer = 0.0f;
-bool showPaperMessage = false;
+float maxPhoneCallTime = 6.0f;       // Duración total de la luz roja en el teléfono tras contestar
+float timeBeforeJumpscare = 10.0f;    // El monstruo saldrá exactamente a los 10 segundos de iniciada la llamada
 
-// Control de la luz roja de los teléfonos
+// Control de la luz roja focalizada sobre el teléfono
 bool phoneRedLightOn = false;
-float phoneRedLightTimer = 0.0f;
+
+// Variables obsoletas
+float text3DScale = 0.12f;
+glm::vec3 textPosOffset = glm::vec3(0.0f, 0.15f, 0.0f);
 
 // =====================================================================================
 // *** PANEL DE CONTROL DE LA LINTERNA 
@@ -131,7 +136,6 @@ float linternaOffsetZ = 0.18f;
 float linternaFixRotX = 0.0f;
 float linternaFixRotY = 0.0f;
 float linternaFixRotZ = 0.0f;
-// =====================================================================================
 
 int main()
 {
@@ -144,7 +148,7 @@ int main()
     glfwWindowHint(GLFW_OPENGL_FORWARD_COMPAT, GL_TRUE);
 #endif
 
-    GLFWwindow* window = glfwCreateWindow(SCR_WIDTH, SCR_HEIGHT, "Garage - Horror Scene", NULL, NULL);
+    GLFWwindow* window = glfwCreateWindow(SCR_WIDTH, SCR_HEIGHT, "Garage ", NULL, NULL);
     if (window == NULL)
     {
         std::cout << "Failed to create GLFW window" << std::endl;
@@ -167,70 +171,20 @@ int main()
 
     initaudio();
 
+    InitFreeType("fonts/arial.ttf");
+
     Shader ourShader("shaders/Vertex_Samy.vs", "shaders/Fragment_Samy.fs");
+    Shader textShader("shaders/text_samy.vs", "shaders/text_samy.fs");
 
     // ---- CARGA DE MODELOS ----
+// ---- CARGA DE MODELOS ----
     Model garageModel("./model/garage/garage.obj");
     Model crimeSceneModel("./model/crime_scene/crime_scene.obj");
     Model bodyModel("./model/body/body.obj");
     Model llantasModel("./model/llantas/llantas.obj");
-    Model monsterModel("./model/monster/monster.obj");
+    Model monsterModel("./model/monstruo/Monstruo.obj"); 
     Model linternaModel("./model/linterna/linterna.obj");
     Model phoneModel("./model/phone/phone.obj");
-
-    // =========================================================================
-    // CARGA MANUAL DE TEXTURA Y GEOMETRÍA PARA EL MENSAJE C (HUD)
-    // =========================================================================
-    unsigned int messageTexture;
-    glGenTextures(1, &messageTexture);
-    glBindTexture(GL_TEXTURE_2D, messageTexture);
-
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-
-    int width, height, nrChannels;
-    // IMPORTANTE: Asegúrate de que el nombre del archivo y carpeta sean exactos
-    unsigned char* data = stbi_load("texture/mensaje C.jpg", &width, &height, &nrChannels, 0);
-    if (data)
-    {
-        GLenum format = (nrChannels == 4) ? GL_RGBA : GL_RGB;
-        glTexImage2D(GL_TEXTURE_2D, 0, format, width, height, 0, format, GL_UNSIGNED_BYTE, data);
-        glGenerateMipmap(GL_TEXTURE_2D);
-    }
-    else
-    {
-        std::cout << "ADVERTENCIA: No se pudo cargar la imagen 'texture/mensaje C.jpg'." << std::endl;
-    }
-    stbi_image_free(data);
-
-    // Creamos el rectángulo (Quad) manualmente para la imagen
-    float quadVertices[] = {
-        // Posiciones        // Normales         // Coords textura
-        -1.0f,  0.3f, 0.0f,  0.0f, 0.0f, 1.0f,  0.0f, 1.0f,
-        -1.0f, -0.3f, 0.0f,  0.0f, 0.0f, 1.0f,  0.0f, 0.0f,
-         1.0f, -0.3f, 0.0f,  0.0f, 0.0f, 1.0f,  1.0f, 0.0f,
-
-        -1.0f,  0.3f, 0.0f,  0.0f, 0.0f, 1.0f,  0.0f, 1.0f,
-         1.0f, -0.3f, 0.0f,  0.0f, 0.0f, 1.0f,  1.0f, 0.0f,
-         1.0f,  0.3f, 0.0f,  0.0f, 0.0f, 1.0f,  1.0f, 1.0f
-    };
-    unsigned int quadVAO, quadVBO;
-    glGenVertexArrays(1, &quadVAO);
-    glGenBuffers(1, &quadVBO);
-    glBindVertexArray(quadVAO);
-    glBindBuffer(GL_ARRAY_BUFFER, quadVBO);
-    glBufferData(GL_ARRAY_BUFFER, sizeof(quadVertices), &quadVertices, GL_STATIC_DRAW);
-
-    glEnableVertexAttribArray(0);
-    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 8 * sizeof(float), (void*)0);
-    glEnableVertexAttribArray(1);
-    glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, 8 * sizeof(float), (void*)(3 * sizeof(float)));
-    glEnableVertexAttribArray(2);
-    glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, 8 * sizeof(float), (void*)(6 * sizeof(float)));
-    // =========================================================================
-
     camera.MovementSpeed = debugMode ? 0.5f : 0.2f;
 
     int frameCount = 0;
@@ -265,77 +219,26 @@ int main()
             fondoPlayed = true;
         }
 
-        // 2. Phone ring en bucle a los 15s
+        // 2. Phone ring en bucle a los 15s 
         if (!phoneRingPlayed && timeElapsed >= 15.0f)
         {
             haltmusic();
             playsound("music/phone ring.mp3", 1);
             phoneRingPlayed = true;
             phoneRedLightOn = true;
-            phoneRedLightTimer = 0.0f;
         }
 
-        // 3. Manejo de luz roja ambiental
-        if (phoneRedLightOn)
-        {
-            phoneRedLightTimer += deltaTime;
-            if (phoneRedLightTimer >= 10.0f && !jumpscareActive)
-            {
-                phoneRedLightOn = false;
-            }
-        }
-
-        // 4. Lógica de Distancia y Temporizador del Mensaje (1.0 segundo)
-        float distanceToPhone = glm::distance(camera.Position, phonePos);
-
-        if (phoneRingPlayed && !callAnswered)
-        {
-            if (distanceToPhone < 0.35f)
-            {
-                nearPhone = true;
-
-                if (!messageTriggered)
-                {
-                    messageTriggered = true;
-                    messageTimer = 0.0f;
-                }
-            }
-            else
-            {
-                nearPhone = false;
-                messageTriggered = false; // Se reinicia si te alejas
-            }
-        }
-        else
-        {
-            nearPhone = false;
-        }
-
-        // 5. Determinar si se dibuja el papel
-        if (messageTriggered && !callAnswered)
-        {
-            messageTimer += deltaTime;
-            // Se muestra exactamente 1 segundo
-            if (messageTimer <= 1.0f)
-            {
-                showPaperMessage = true;
-            }
-            else
-            {
-                showPaperMessage = false;
-            }
-        }
-        else
-        {
-            showPaperMessage = false;
-        }
-
-        // 6. Flujo post-interacción (Tecla C contestada)
+        // 3. Control de tiempos post-interacción (Tecla C presionada)
         if (callAnswered && !jumpscareFinished)
         {
             phoneCallTimer += deltaTime;
 
-            if (!jumpscareActive && phoneCallTimer >= 2.0f)
+            if (phoneCallTimer >= maxPhoneCallTime)
+            {
+                phoneRedLightOn = false;
+            }
+
+            if (!jumpscareActive && phoneCallTimer >= timeBeforeJumpscare)
             {
                 jumpscareActive = true;
                 horrorLightOn = true;
@@ -365,16 +268,22 @@ int main()
             }
         }
 
-        // =========================================================================
-        // RENDERIZADO Y CONTROL DE SHADERS
-        // =========================================================================
+        float distanceToPhone = glm::distance(camera.Position, phonePos);
+        nearPhone = (distanceToPhone < 0.35f);
+
+        // ================================
+        // CONTROL DEL FONDO 
+        // ================================
         float time = currentFrame;
         float flickerIntensity = HorrorFlicker(time);
 
-        if (debugMode)
+        if (jumpscareActive)
+            glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
+        else if (debugMode)
             glClearColor(0.5f, 0.55f, 0.6f, 1.0f);
         else
             glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
+
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
         ourShader.use();
@@ -413,35 +322,45 @@ int main()
         ourShader.setFloat("pointLights[0].linear", 0.09f);
         ourShader.setFloat("pointLights[0].quadratic", 0.032f);
 
-        // --- PUNTO DE LUZ 1 (Luz del Monstruo O Luz Roja sobre el Teléfono) ---
-        if (horrorLightOn && jumpscareActive)
+        // --- PUNTO DE LUZ 1 (Luz del Teléfono / Aro de Luz del Monstruo) ---
+        if (jumpscareActive && horrorLightOn)
         {
-            float horrorFlicker = HorrorFlicker(currentFrame * 8.0f);
-            glm::vec3 horrorLightColor = glm::vec3(0.9f, 0.0f, 0.0f);
+            // Tono espectral azul pálido/grisáceo frío
+            glm::vec3 monsterFaceLightColor = glm::vec3(0.35f, 0.4f, 0.5f);
 
+            // Posicionamos la luz un poco por detrás del monstruo o directamente en su origen
             ourShader.setVec3("pointLights[1].position", monsterPos);
-            ourShader.setVec3("pointLights[1].ambient", horrorLightColor * 0.05f * horrorFlicker);
-            ourShader.setVec3("pointLights[1].diffuse", horrorLightColor * horrorFlicker * 2.5f);
-            ourShader.setVec3("pointLights[1].specular", horrorLightColor * horrorFlicker * 2.5f);
+            ourShader.setVec3("pointLights[1].ambient", monsterFaceLightColor * 0.15f);
+            ourShader.setVec3("pointLights[1].diffuse", monsterFaceLightColor * 1.5f);
+            ourShader.setVec3("pointLights[1].specular", monsterFaceLightColor * 0.8f);
+
+            // CORRECCIÓN DE ATENUACIÓN: Valores bajos para crear el aro/halo circular de luz en el centro
+            ourShader.setFloat("pointLights[1].constant", 1.0f);
+            ourShader.setFloat("pointLights[1].linear", 0.35f);
+            ourShader.setFloat("pointLights[1].quadratic", 0.45f);
         }
         else if (phoneRedLightOn)
         {
             float phoneFlicker = HorrorFlicker(currentFrame * 5.0f);
-            glm::vec3 phoneLightColor = glm::vec3(0.8f, 0.0f, 0.0f);
+            glm::vec3 phoneLightColor = glm::vec3(0.9f, 0.0f, 0.0f);
 
             ourShader.setVec3("pointLights[1].position", phonePos);
-            ourShader.setVec3("pointLights[1].ambient", phoneLightColor * 0.04f * phoneFlicker);
-            ourShader.setVec3("pointLights[1].diffuse", phoneLightColor * phoneFlicker * 2.0f);
-            ourShader.setVec3("pointLights[1].specular", phoneLightColor * phoneFlicker * 2.0f);
+            ourShader.setVec3("pointLights[1].ambient", phoneLightColor * 0.01f * phoneFlicker);
+            ourShader.setVec3("pointLights[1].diffuse", phoneLightColor * phoneFlicker * 4.0f);
+            ourShader.setVec3("pointLights[1].specular", phoneLightColor * phoneFlicker * 4.0f);
+
+            ourShader.setFloat("pointLights[1].constant", 1.0f);
+            ourShader.setFloat("pointLights[1].linear", 4.5f);
+            ourShader.setFloat("pointLights[1].quadratic", 9.0f);
         }
         else
         {
             ourShader.setVec3("pointLights[1].diffuse", glm::vec3(0.0f));
             ourShader.setVec3("pointLights[1].specular", glm::vec3(0.0f));
+            ourShader.setFloat("pointLights[1].constant", 1.0f);
+            ourShader.setFloat("pointLights[1].linear", 0.09f);
+            ourShader.setFloat("pointLights[1].quadratic", 0.032f);
         }
-        ourShader.setFloat("pointLights[1].constant", 1.0f);
-        ourShader.setFloat("pointLights[1].linear", 0.09f);
-        ourShader.setFloat("pointLights[1].quadratic", 0.032f);
 
         for (int i = 2; i < 4; i++) {
             std::string base = "pointLights[" + std::to_string(i) + "].";
@@ -480,7 +399,6 @@ int main()
         // =========================================================================
         // DIBUJADO DE MODELOS 3D
         // =========================================================================
-
         glm::mat4 garageMat = glm::mat4(1.0f);
         garageMat = glm::scale(garageMat, glm::vec3(garageScale));
         ourShader.setMat4("model", garageMat);
@@ -524,44 +442,6 @@ int main()
             monsterModel.Draw(ourShader);
         }
 
-        // =========================================================================
-        // HUD DEL MENSAJE DE IMAGEN C (DURANTE 1.0 SEGUNDO)
-        // =========================================================================
-        if (showPaperMessage)
-        {
-            // Forzamos el shader a mostrar el mensaje ignorando la oscuridad (FullBright)
-            bool previousDebugState = debugMode;
-            ourShader.setBool("debugFullBright", true);
-
-            glm::mat4 paperMat = glm::mat4(1.0f);
-
-            // Lo ponemos justo frente a la cámara (a 25 cm) y un poco hacia abajo
-            glm::vec3 hudOffset = (camera.Front * 0.25f) + (camera.Up * -0.05f);
-            paperMat = glm::translate(paperMat, camera.Position + hudOffset);
-
-            // Forzamos que la imagen SIEMPRE mire al frente (a tus ojos)
-            paperMat = glm::rotate(paperMat, glm::radians(-camera.Yaw - 90.0f), glm::vec3(0.0f, 1.0f, 0.0f));
-            paperMat = glm::rotate(paperMat, glm::radians(camera.Pitch), glm::vec3(1.0f, 0.0f, 0.0f));
-
-            // Escala del rectángulo (puedes hacer este número más grande si la imagen se ve muy chiquita)
-            paperMat = glm::scale(paperMat, glm::vec3(0.035f));
-            ourShader.setMat4("model", paperMat);
-
-            // Vinculamos la textura que cargamos de "mensaje C.jpg"
-            glActiveTexture(GL_TEXTURE0);
-            glBindTexture(GL_TEXTURE_2D, messageTexture);
-
-            // Dibujamos nuestro Quad manual asegurándonos de que esté encima de todo (sin Z-buffer)
-            glDisable(GL_DEPTH_TEST);
-            glBindVertexArray(quadVAO);
-            glDrawArrays(GL_TRIANGLES, 0, 6);
-            glBindVertexArray(0);
-            glEnable(GL_DEPTH_TEST);
-
-            // Restauramos la oscuridad del ambiente
-            ourShader.setBool("debugFullBright", previousDebugState);
-        }
-
         if (flashlightOn) {
             glm::mat4 linternaMat = glm::mat4(1.0f);
             linternaMat = glm::translate(linternaMat, currentLinternaPos);
@@ -572,13 +452,41 @@ int main()
             linternaModel.Draw(ourShader);
         }
 
+        // =========================================================================
+        // RENDERING HUD TEXT 
+        // =========================================================================
+        if (showMenu)
+        {
+            float startY = (float)SCR_HEIGHT - 80.0f;
+            float stepY = 40.0f;
+            RenderText(textShader, "W: al frente", 50.0f, startY, 0.5f, glm::vec3(1.0f, 1.0f, 1.0f), (float)SCR_WIDTH, (float)SCR_HEIGHT);
+            RenderText(textShader, "S: Atras", 50.0f, startY - stepY, 0.5f, glm::vec3(1.0f, 1.0f, 1.0f), (float)SCR_WIDTH, (float)SCR_HEIGHT);
+            RenderText(textShader, "A: Izquierda", 50.0f, startY - 2 * stepY, 0.5f, glm::vec3(1.0f, 1.0f, 1.0f), (float)SCR_WIDTH, (float)SCR_HEIGHT);
+            RenderText(textShader, "D: derecha", 50.0f, startY - 3 * stepY, 0.5f, glm::vec3(1.0f, 1.0f, 1.0f), (float)SCR_WIDTH, (float)SCR_HEIGHT);
+            RenderText(textShader, "F: prender/apagar linterna", 50.0f, startY - 4 * stepY, 0.5f, glm::vec3(1.0f, 1.0f, 1.0f), (float)SCR_WIDTH, (float)SCR_HEIGHT);
+            RenderText(textShader, "C: contestar", 50.0f, startY - 5 * stepY, 0.5f, glm::vec3(1.0f, 1.0f, 1.0f), (float)SCR_WIDTH, (float)SCR_HEIGHT);
+            RenderText(textShader, "M: ocultar/mostrar Menu", 50.0f, startY - 6 * stepY, 0.5f, glm::vec3(1.0f, 1.0f, 1.0f), (float)SCR_WIDTH, (float)SCR_HEIGHT);
+            RenderText(textShader, "Barra espaciadora: correr", 50.0f, startY - 7 * stepY, 0.5f, glm::vec3(1.0f, 1.0f, 1.0f), (float)SCR_WIDTH, (float)SCR_HEIGHT);
+
+            std::string volText = "Volumen Musica: " + std::to_string(get_global_volume()) + "% (Flecha Arriba/Abajo)";
+            RenderText(textShader, volText, 50.0f, startY - 8 * stepY, 0.5f, glm::vec3(0.0f, 1.0f, 0.5f), (float)SCR_WIDTH, (float)SCR_HEIGHT);
+        }
+
+        if (nearPhone && !callAnswered)
+        {
+            std::string alertText = "Presiona la tecla C para contestar la llamada";
+            float scale = 0.6f;
+            float textWidth = GetTextWidth(alertText, scale);
+            float xPos = ((float)SCR_WIDTH - textWidth) / 2.0f;
+            float yPos = 100.0f;
+
+            RenderText(textShader, alertText, xPos + 2.0f, yPos - 2.0f, scale, glm::vec3(0.0f, 0.0f, 0.0f), (float)SCR_WIDTH, (float)SCR_HEIGHT);
+            RenderText(textShader, alertText, xPos, yPos, scale, glm::vec3(0.9f, 0.8f, 0.2f), (float)SCR_WIDTH, (float)SCR_HEIGHT);
+        }
+
         glfwSwapBuffers(window);
         glfwPollEvents();
     }
-
-    // Limpieza de memoria
-    glDeleteVertexArrays(1, &quadVAO);
-    glDeleteBuffers(1, &quadVBO);
 
     glfwTerminate();
     return 0;
@@ -607,6 +515,25 @@ float HorrorFlicker(float time)
 
 void processInput(GLFWwindow* window)
 {
+    bool spacePressed = glfwGetKey(window, GLFW_KEY_SPACE) == GLFW_PRESS;
+    float baseSpeed = debugMode ? 0.5f : 0.2f;
+    camera.MovementSpeed = spacePressed ? (baseSpeed * 2.0f) : baseSpeed;
+
+    // Control de volumen de la musica (flechas arriba y abajo)
+    bool upPressed = glfwGetKey(window, GLFW_KEY_UP) == GLFW_PRESS;
+    if (upPressed && !upKeyPressedLastFrame)
+    {
+        setvolume(get_global_volume() + 10);
+    }
+    upKeyPressedLastFrame = upPressed;
+
+    bool downPressed = glfwGetKey(window, GLFW_KEY_DOWN) == GLFW_PRESS;
+    if (downPressed && !downKeyPressedLastFrame)
+    {
+        setvolume(get_global_volume() - 10);
+    }
+    downKeyPressedLastFrame = downPressed;
+
     if (glfwGetKey(window, GLFW_KEY_ESCAPE) == GLFW_PRESS)
         glfwSetWindowShouldClose(window, true);
 
@@ -626,8 +553,16 @@ void processInput(GLFWwindow* window)
         playsound("music/Phone call.mp3", 0);
         callAnswered = true;
         phoneCallTimer = 0.0f;
+        phoneRedLightOn = true;
     }
     cKeyPressedLastFrame = cPressed;
+
+    bool mPressed = glfwGetKey(window, GLFW_KEY_M) == GLFW_PRESS;
+    if (mPressed && !mKeyPressedLastFrame)
+    {
+        showMenu = !showMenu;
+    }
+    mKeyPressedLastFrame = mPressed;
 
     if (debugMode)
     {

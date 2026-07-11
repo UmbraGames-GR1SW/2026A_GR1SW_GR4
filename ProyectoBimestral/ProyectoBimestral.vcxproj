@@ -150,6 +150,8 @@
   </ItemGroup>
   <ItemGroup>
     <None Include="shaders\Fragment_Samy.fs" />
+    <None Include="shaders\text_samy.fs" />
+    <None Include="shaders\text_samy.vs" />
     <None Include="shaders\Vertex_Samy.vs" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />

@@ -18,6 +18,24 @@ inline int initaudio(void)
     return 1;
 }
 
+inline int& get_global_volume() {
+    static int volume = 50; // 0 to 100, default 50
+    return volume;
+}
+
+inline void setvolume(int volume) {
+    if (volume < 0) volume = 0;
+    if (volume > 100) volume = 100;
+    get_global_volume() = volume;
+
+    int mciVol = volume * 10;
+    std::string command = "setaudio sfxsound volume to " + std::to_string(mciVol);
+    mciSendStringA(command.c_str(), NULL, 0, NULL);
+
+    std::string command2 = "setaudio bgmusic volume to " + std::to_string(mciVol);
+    mciSendStringA(command2.c_str(), NULL, 0, NULL);
+}
+
 inline int playsound(const char* sound, int repeat)
 {
     // Detener y cerrar el alias anterior para liberar recursos
@@ -34,6 +52,10 @@ inline int playsound(const char* sound, int repeat)
     }
 
     if (err == 0) {
+        // Apply current volume
+        std::string volCommand = "setaudio sfxsound volume to " + std::to_string(get_global_volume() * 10);
+        mciSendStringA(volCommand.c_str(), NULL, 0, NULL);
+
         if (repeat) {
             mciSendStringA("play sfxsound repeat", NULL, 0, NULL);
         } else {
@@ -60,6 +82,10 @@ inline int playmusic(const char* musicfile)
     }
 
     if (err == 0) {
+        // Apply current volume
+        std::string volCommand = "setaudio bgmusic volume to " + std::to_string(get_global_volume() * 10);
+        mciSendStringA(volCommand.c_str(), NULL, 0, NULL);
+
         mciSendStringA("play bgmusic repeat", NULL, 0, NULL);
         return 1;
     }

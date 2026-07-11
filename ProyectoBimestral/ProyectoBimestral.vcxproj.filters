@@ -32,5 +32,11 @@
     <None Include="shaders\Fragment_Samy.fs">
       <Filter>Archivos de origen\shaders</Filter>
     </None>
+    <None Include="shaders\text_samy.fs">
+      <Filter>Archivos de origen\shaders</Filter>
+    </None>
+    <None Include="shaders\text_samy.vs">
+      <Filter>Archivos de origen\shaders</Filter>
+    </None>
   </ItemGroup>
 </Project>
