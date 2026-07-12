@@ -16,6 +16,7 @@
 #include <iostream>
 #include <string>
 #include <cstdlib>
+#include <algorithm> 
 #include <learnopengl/audio.h>
 #include <learnopengl/text_renderer.h>
 
@@ -53,15 +54,15 @@ float garageScale = 1.0f;
 
 glm::vec3 flickerLightPos = glm::vec3(5.0f, 3.0f, 2.0f);
 glm::vec3 flickerLightColor = glm::vec3(1.0f, 1.0f, 0.95f);
-glm::vec3 ambientLightColor = glm::vec3(0.02f, 0.02f, 0.025f); // Un poco más tenue para resaltar la luz focalizada
+glm::vec3 ambientLightColor = glm::vec3(0.02f, 0.02f, 0.025f);
 
 // -------------------------------------------------------------------------------------
 // COLISIONES / LIMITES DEL GARAGE 
 // -------------------------------------------------------------------------------------
-float garageMinX = -0.744853f;
-float garageMaxX = 0.695734f;
-float garageMinZ = -2.500000f; // Ampliado el rango Z para que puedas caminar hacia el teléfono al fondo
-float garageMaxZ = 1.00179f;
+float garageMinX = -0.75f;
+float garageMaxX = 0.75f;
+float garageMinZ = -1.15f;
+float garageMaxZ = 1.05f;
 float playerHeight = -0.1375f;
 
 bool flashlightOn = true;
@@ -107,7 +108,10 @@ bool screamPlayed = false;
 float monsterHeightOffset = -0.205f;
 float monsterDistanceOffset = 0.20f;
 
-// Variables de control de audio y secuencias
+// CONFIGURACIÓN DE AUDIO
+float screamDuration = 1.8f;
+int screamVolumeLevel = 100;
+
 bool fondoPlayed = false;
 bool phoneRingPlayed = false;
 bool phoneCallPlayed = false;
@@ -115,23 +119,21 @@ bool nearPhone = false;
 bool callAnswered = false;
 
 float phoneCallTimer = 0.0f;
-
 float maxPhoneCallTime = 6.0f;
 float timeBeforeJumpscare = 10.0f;
 
-// Control de la luz roja focalizada sobre el teléfono
 bool phoneRedLightOn = false;
 
 float text3DScale = 0.12f;
 glm::vec3 textPosOffset = glm::vec3(0.0f, 0.15f, 0.0f);
 
 // =====================================================================================
-// *** PANEL DE CONTROL DE LA LINTERNA 
+// *** PANEL DE CONTROL DE LA LINTERNA (Acercada significativamente en el eje Z)
 // =====================================================================================
 float linternaScale = 0.0001f;
 float linternaOffsetX = 0.015f;
 float linternaOffsetY = -0.085f;
-float linternaOffsetZ = 0.18f;
+float linternaOffsetZ = 0.11f;       // Reducido de 0.18f a 0.11f para traerla cerca del cuerpo
 
 float linternaFixRotX = 0.0f;
 float linternaFixRotY = 0.0f;
@@ -252,6 +254,7 @@ int main()
 
                 if (!screamPlayed)
                 {
+                    setvolume(screamVolumeLevel);
                     playsound("music/scream.mp3", 0);
                     screamPlayed = true;
                 }
@@ -263,7 +266,7 @@ int main()
             jumpscareTimer += deltaTime;
             monsterPos = camera.Position + (camera.Front * monsterDistanceOffset) + (camera.Up * monsterHeightOffset);
 
-            if (jumpscareTimer >= 1.6f)
+            if (jumpscareTimer >= screamDuration)
             {
                 jumpscareActive = false;
                 jumpscareFinished = true;
@@ -273,9 +276,9 @@ int main()
             }
         }
 
-        // Se amplió un poco el rango de detección del teléfono por lo que ahora está más lejos
+        // Requerido: El mensaje sale solo cuando estás más cerca del fondo (pegado al teléfono)
         float distanceToPhone = glm::distance(camera.Position, phonePos);
-        nearPhone = (distanceToPhone < 0.65f);
+        nearPhone = (distanceToPhone < 0.35f);
 
         // ================================
         // CONTROL DEL FONDO 
@@ -296,7 +299,7 @@ int main()
         ourShader.setVec3("viewPos", camera.Position);
         ourShader.setBool("debugFullBright", debugMode);
 
-        glm::mat4 projection = glm::perspective(glm::radians(camera.Zoom), (float)SCR_WIDTH / (float)SCR_HEIGHT, 0.1f, 500.0f);
+        glm::mat4 projection = glm::perspective(glm::radians(camera.Zoom), (float)SCR_WIDTH / (float)SCR_HEIGHT, 0.01f, 500.0f);
         glm::mat4 view = camera.GetViewMatrix();
         ourShader.setMat4("projection", projection);
         ourShader.setMat4("view", view);
@@ -328,7 +331,7 @@ int main()
         ourShader.setFloat("pointLights[0].linear", 0.09f);
         ourShader.setFloat("pointLights[0].quadratic", 0.032f);
 
-        // --- PUNTO DE LUZ 1 (Luz del Teléfono - Estilo El Exorcista) ---
+        // --- PUNTO DE LUZ 1 (Jumpscare Face Light) ---
         if (jumpscareActive && horrorLightOn)
         {
             glm::vec3 monsterFaceLightColor = glm::vec3(0.35f, 0.4f, 0.5f);
@@ -341,22 +344,6 @@ int main()
             ourShader.setFloat("pointLights[1].constant", 1.0f);
             ourShader.setFloat("pointLights[1].linear", 0.35f);
             ourShader.setFloat("pointLights[1].quadratic", 0.45f);
-        }
-        else if (phoneRedLightOn)
-        {
-            float phoneFlicker = HorrorFlicker(currentFrame * 5.0f);
-            glm::vec3 phoneLightColor = glm::vec3(0.9f, 0.1f, 0.1f); // Tono rojizo místico
-
-            // Ponemos la luz elevada directamente encima del teléfono, simulando un poste/foco directo
-            ourShader.setVec3("pointLights[1].position", phonePos + glm::vec3(0.0f, 2.5f, 0.0f));
-            ourShader.setVec3("pointLights[1].ambient", phoneLightColor * 0.01f * phoneFlicker);
-            ourShader.setVec3("pointLights[1].diffuse", phoneLightColor * phoneFlicker * 6.0f); // Más intensa
-            ourShader.setVec3("pointLights[1].specular", phoneLightColor * phoneFlicker * 6.0f);
-
-            // Valores de atenuación bajos para generar el haz nítido de luz de arriba a abajo
-            ourShader.setFloat("pointLights[1].constant", 1.0f);
-            ourShader.setFloat("pointLights[1].linear", 0.1f);
-            ourShader.setFloat("pointLights[1].quadratic", 0.05f);
         }
         else
         {
@@ -382,6 +369,11 @@ int main()
         glm::vec3 handOffset = (camera.Right * linternaOffsetX) + (camera.Up * linternaOffsetY) + (camera.Front * linternaOffsetZ);
         glm::vec3 currentLinternaPos = camera.Position + handOffset;
 
+        float linternaSafety = 0.02f;
+        currentLinternaPos.x = glm::clamp(currentLinternaPos.x, garageMinX + linternaSafety, garageMaxX - linternaSafety);
+        currentLinternaPos.z = glm::clamp(currentLinternaPos.z, garageMinZ + linternaSafety, garageMaxZ - linternaSafety);
+        currentLinternaPos.y = (glm::max)(currentLinternaPos.y, -0.21f);
+
         ourShader.setVec3("spotLight.position", camera.Position);
         ourShader.setVec3("spotLight.direction", camera.Front);
 
@@ -400,6 +392,28 @@ int main()
         ourShader.setFloat("spotLight.quadratic", 0.032f);
         ourShader.setFloat("spotLight.cutOff", glm::cos(glm::radians(12.5f)));
         ourShader.setFloat("spotLight.outerCutOff", glm::cos(glm::radians(17.5f)));
+
+        // --- LUZ DE TELÉFONO (Requerido: Círculo rojo más pequeño y cerrado) ---
+        ourShader.setVec3("phoneLight.position", glm::vec3(phonePos.x, 2.5f, phonePos.z));
+        ourShader.setVec3("phoneLight.direction", glm::vec3(0.0f, -1.0f, 0.0f));
+        if (phoneRedLightOn && !jumpscareActive) {
+            float phoneFlicker = HorrorFlicker(currentFrame * 5.0f);
+            glm::vec3 phoneLightColor = glm::vec3(0.9f, 0.02f, 0.02f);
+            ourShader.setVec3("phoneLight.ambient", phoneLightColor * 0.05f * phoneFlicker);
+            ourShader.setVec3("phoneLight.diffuse", phoneLightColor * phoneFlicker * 5.0f);
+            ourShader.setVec3("phoneLight.specular", phoneLightColor * phoneFlicker * 3.0f);
+        }
+        else {
+            ourShader.setVec3("phoneLight.ambient", glm::vec3(0.0f));
+            ourShader.setVec3("phoneLight.diffuse", glm::vec3(0.0f));
+            ourShader.setVec3("phoneLight.specular", glm::vec3(0.0f));
+        }
+        ourShader.setFloat("phoneLight.constant", 1.0f);
+        ourShader.setFloat("phoneLight.linear", 0.09f);
+        ourShader.setFloat("phoneLight.quadratic", 0.032f);
+        // Ángulos reducidos a la mitad para estrechar el círculo proyectado drásticamente
+        ourShader.setFloat("phoneLight.cutOff", glm::cos(glm::radians(5.0f)));
+        ourShader.setFloat("phoneLight.outerCutOff", glm::cos(glm::radians(7.5f)));
 
         // =========================================================================
         // DIBUJADO DE MODELOS 3D
@@ -453,7 +467,13 @@ int main()
             glm::mat4 linternaMat = glm::mat4(1.0f);
             linternaMat = glm::translate(linternaMat, currentLinternaPos);
             linternaMat = glm::rotate(linternaMat, glm::radians(-camera.Yaw - 90.0f), glm::vec3(0.0f, 1.0f, 0.0f));
-            linternaMat = glm::rotate(linternaMat, glm::radians(camera.Pitch), glm::vec3(1.0f, 0.0f, 0.0f));
+
+            float pitchAjustado = camera.Pitch;
+            if (camera.Pitch < -15.0f) {
+                pitchAjustado = camera.Pitch * 0.4f;
+            }
+            linternaMat = glm::rotate(linternaMat, glm::radians(pitchAjustado), glm::vec3(1.0f, 0.0f, 0.0f));
+
             linternaMat = glm::scale(linternaMat, glm::vec3(linternaScale));
             ourShader.setMat4("model", linternaMat);
             linternaModel.Draw(ourShader);
@@ -501,12 +521,21 @@ int main()
 // DELIMITACIÓN DE LOS OBJETOS 
 void ClampPlayerToGarage()
 {
-    // 1. Límites generales de las paredes del garaje
     camera.Position.x = glm::clamp(camera.Position.x, garageMinX, garageMaxX);
     camera.Position.z = glm::clamp(camera.Position.z, garageMinZ, garageMaxZ);
     camera.Position.y = playerHeight;
 
-    // 2. Delimitación de las Llantas 
+    if (camera.Position.x >= -0.45f - 0.15f && camera.Position.x <= 0.25f + 0.15f)
+    {
+        if (glm::abs(camera.Position.z - 0.60f) < 0.15f)
+        {
+            if (camera.Position.z < 0.60f)
+                camera.Position.z = 0.60f - 0.15f;
+            else
+                camera.Position.z = 0.60f + 0.15f;
+        }
+    }
+
     float tireRadius = 0.15f;
     float distToTires = glm::distance(glm::vec2(camera.Position.x, camera.Position.z), glm::vec2(llantasPos.x, llantasPos.z));
     if (distToTires < tireRadius)
@@ -516,7 +545,6 @@ void ClampPlayerToGarage()
         camera.Position.z = llantasPos.z + direction.y * tireRadius;
     }
 
-    // 3. Delimitación del Teléfono
     float phoneRadius = 0.15f;
     float distToPhone = glm::distance(glm::vec2(camera.Position.x, camera.Position.z), glm::vec2(phonePos.x, phonePos.z));
     if (distToPhone < phoneRadius)
@@ -524,6 +552,15 @@ void ClampPlayerToGarage()
         glm::vec2 direction = glm::normalize(glm::vec2(camera.Position.x, camera.Position.z) - glm::vec2(phonePos.x, phonePos.z));
         camera.Position.x = phonePos.x + direction.x * phoneRadius;
         camera.Position.z = phonePos.z + direction.y * phoneRadius;
+    }
+
+    float bodyRadius = 0.22f;
+    float distToBody = glm::distance(glm::vec2(camera.Position.x, camera.Position.z), glm::vec2(bodyOriginalPos.x, bodyOriginalPos.z));
+    if (distToBody < bodyRadius)
+    {
+        glm::vec2 direction = glm::normalize(glm::vec2(camera.Position.x, camera.Position.z) - glm::vec2(bodyOriginalPos.x, bodyOriginalPos.z));
+        camera.Position.x = bodyOriginalPos.x + direction.x * bodyRadius;
+        camera.Position.z = bodyOriginalPos.z + direction.y * bodyRadius;
     }
 }
 

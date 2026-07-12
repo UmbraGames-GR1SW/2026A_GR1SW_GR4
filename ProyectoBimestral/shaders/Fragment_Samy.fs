@@ -41,6 +41,7 @@ uniform vec3 viewPos;
 uniform DirLight dirLight;
 uniform PointLight pointLights[NR_POINT_LIGHTS];
 uniform SpotLight spotLight;
+uniform SpotLight phoneLight;
 
 
 uniform vec3 materialColor;
@@ -88,6 +89,7 @@ void main()
     for (int i = 0; i < NR_POINT_LIGHTS; i++)
         result += CalcPointLight(pointLights[i], norm, FragPos, viewDir, texColor);
     result += CalcSpotLight(spotLight, norm, FragPos, viewDir, texColor);
+    result += CalcSpotLight(phoneLight, norm, FragPos, viewDir, texColor);
 
     FragColor = vec4(result, 1.0);
 }
