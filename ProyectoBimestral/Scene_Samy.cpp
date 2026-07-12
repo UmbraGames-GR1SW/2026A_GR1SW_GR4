@@ -494,16 +494,17 @@ int main()
         {
             float startY = (float)SCR_HEIGHT - 80.0f;
             float stepY = 40.0f;
-            RenderText(textShader, "W: al frente", 50.0f, startY, 0.5f, glm::vec3(1.0f, 1.0f, 1.0f), (float)SCR_WIDTH, (float)SCR_HEIGHT);
+            RenderText(textShader, "W: Al frente", 50.0f, startY, 0.5f, glm::vec3(1.0f, 1.0f, 1.0f), (float)SCR_WIDTH, (float)SCR_HEIGHT);
             RenderText(textShader, "S: Atras", 50.0f, startY - stepY, 0.5f, glm::vec3(1.0f, 1.0f, 1.0f), (float)SCR_WIDTH, (float)SCR_HEIGHT);
             RenderText(textShader, "A: Izquierda", 50.0f, startY - 2 * stepY, 0.5f, glm::vec3(1.0f, 1.0f, 1.0f), (float)SCR_WIDTH, (float)SCR_HEIGHT);
-            RenderText(textShader, "D: derecha", 50.0f, startY - 3 * stepY, 0.5f, glm::vec3(1.0f, 1.0f, 1.0f), (float)SCR_WIDTH, (float)SCR_HEIGHT);
-            RenderText(textShader, "F: prender/apagar linterna", 50.0f, startY - 4 * stepY, 0.5f, glm::vec3(1.0f, 1.0f, 1.0f), (float)SCR_WIDTH, (float)SCR_HEIGHT);
-            RenderText(textShader, "C: contestar", 50.0f, startY - 5 * stepY, 0.5f, glm::vec3(1.0f, 1.0f, 1.0f), (float)SCR_WIDTH, (float)SCR_HEIGHT);
-            RenderText(textShader, "M: ocultar/mostrar Menu", 50.0f, startY - 6 * stepY, 0.5f, glm::vec3(1.0f, 1.0f, 1.0f), (float)SCR_WIDTH, (float)SCR_HEIGHT);
+            RenderText(textShader, "D: Derecha", 50.0f, startY - 3 * stepY, 0.5f, glm::vec3(1.0f, 1.0f, 1.0f), (float)SCR_WIDTH, (float)SCR_HEIGHT);
+            RenderText(textShader, "SHIFT + W: Correr", 50.0f, startY - 4 * stepY, 0.5f, glm::vec3(1.0f, 1.0f, 1.0f), (float)SCR_WIDTH, (float)SCR_HEIGHT);
+            RenderText(textShader, "F: Prender/apagar linterna", 50.0f, startY - 5 * stepY, 0.5f, glm::vec3(1.0f, 1.0f, 1.0f), (float)SCR_WIDTH, (float)SCR_HEIGHT);
+            RenderText(textShader, "C: Contestar", 50.0f, startY - 6 * stepY, 0.5f, glm::vec3(1.0f, 1.0f, 1.0f), (float)SCR_WIDTH, (float)SCR_HEIGHT);
+            RenderText(textShader, "M: Ocultar/mostrar Menu", 50.0f, startY - 7 * stepY, 0.5f, glm::vec3(1.0f, 1.0f, 1.0f), (float)SCR_WIDTH, (float)SCR_HEIGHT);
 
             std::string volText = "Volumen Musica: " + std::to_string(get_global_volume()) + "% (Flecha Arriba/Abajo)";
-            RenderText(textShader, volText, 50.0f, startY - 7 * stepY, 0.5f, glm::vec3(0.0f, 1.0f, 0.5f), (float)SCR_WIDTH, (float)SCR_HEIGHT);
+            RenderText(textShader, volText, 50.0f, startY - 8 * stepY, 0.5f, glm::vec3(0.0f, 1.0f, 0.5f), (float)SCR_WIDTH, (float)SCR_HEIGHT);
         }
 
         if (nearPhone && !callAnswered)
