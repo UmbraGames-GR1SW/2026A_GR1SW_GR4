@@ -52,8 +52,26 @@ const bool  MODEL_IS_Z_UP = false;
 // ignora: asi el piso (muy abajo) y el techo/lamparas (muy arriba)
 // nunca bloquean el movimiento, sin necesidad de detectarlos "a mano".
 // -----------------------------------------------------------
-const float COLLISION_BAND_MIN = 0.15f; // por encima del piso
+// Subido de 0.15 a 0.35: los cables tirados en el piso suelen tener
+// curvas/ondulaciones que sobresalen unos centimetros, asi que un
+// umbral bajo no alcanza. Con 0.35 cualquier TRIANGULO (no malla
+// completa) que quede entero por debajo de esa altura se ignora,
+// sin importar si comparte malla con una silla u otro objeto solido.
+const float COLLISION_BAND_MIN = 0.35f; // por encima del piso
 const float COLLISION_BAND_MAX = 2.2f;  // hasta un poco mas alto que la cabeza
+
+// -----------------------------------------------------------
+// Respaldo adicional a nivel de malla completa: si TODA una malla
+// (cable, hoja, libreta) es chata y esta pegada al piso, se excluye
+// entera aunque alguno de sus triangulos rozara la franja de arriba.
+// -----------------------------------------------------------
+const float FLOOR_CLUTTER_MAX_HEIGHT = 0.3f;
+const float FLOOR_CLUTTER_MAX_ELEVATION = 0.4f;
+
+// Si es true, imprime en consola el indice, tamano y posicion de
+// cada malla al iniciar. Sirve para identificar cables colgantes
+// u otros objetos que quieras excluir a mano en excludedMeshIndices.
+const bool PRINT_MESH_DEBUG = true;
 
 // Tamano de celda de la grilla de colision (mas chico = mas preciso, mas memoria)
 const float GRID_CELL_SIZE = 0.4f;
@@ -157,11 +175,37 @@ void BuildCollisionGrid(Model& model, const glm::mat4& modelMatrix, const AABB& 
 
     for (size_t m = 0; m < model.meshes.size(); m++)
     {
-        if (std::find(excludedMeshIndices.begin(), excludedMeshIndices.end(), (int)m) != excludedMeshIndices.end())
-            continue;
-
         auto& verts = model.meshes[m].vertices;
         auto& idx = model.meshes[m].indices;
+
+        // AABB de la malla completa en espacio de mundo (para decidir si es
+        // "basura de piso" y para el print de debug).
+        glm::vec3 meshMin(FLT_MAX), meshMax(-FLT_MAX);
+        for (auto& v : verts) {
+            glm::vec3 wp = glm::vec3(modelMatrix * glm::vec4(v.Position, 1.0f));
+            meshMin = glm::min(meshMin, wp);
+            meshMax = glm::max(meshMax, wp);
+        }
+        float meshHeight = meshMax.y - meshMin.y;
+        float elevationAboveFloor = meshMin.y - floorY;
+
+        bool excludedManually = std::find(excludedMeshIndices.begin(), excludedMeshIndices.end(), (int)m) != excludedMeshIndices.end();
+        bool isFloorClutter = (meshHeight < FLOOR_CLUTTER_MAX_HEIGHT) &&
+            (elevationAboveFloor > -0.05f) &&
+            (elevationAboveFloor < FLOOR_CLUTTER_MAX_ELEVATION);
+
+        if (PRINT_MESH_DEBUG)
+        {
+            std::cout << "  [MESH " << m << "] verts=" << verts.size()
+                << " size=(" << (meshMax.x - meshMin.x) << ", " << meshHeight << ", " << (meshMax.z - meshMin.z) << ")"
+                << " elevacion=" << elevationAboveFloor
+                << (isFloorClutter ? "  -> BASURA DE PISO (excluida auto)" : "")
+                << (excludedManually ? "  -> EXCLUIDA manualmente" : "")
+                << std::endl;
+        }
+
+        if (excludedManually || isFloorClutter)
+            continue;
 
         for (size_t i = 0; i + 2 < idx.size(); i += 3)
         {
@@ -199,9 +243,11 @@ void BuildCollisionGrid(Model& model, const glm::mat4& modelMatrix, const AABB& 
     std::cout << "[DEBUG] Celdas solidas: " << solidCells << " / " << g_grid.solid.size() << std::endl;
 }
 
-// Revisa si el cuerpo del jugador (circulo de radio PLAYER_RADIUS)
-// pisa alguna celda solida en la posicion dada.
-bool CollidesAt(const glm::vec3& pos)
+// Revisa si el cuerpo del jugador (circulo de radio "radius")
+// pisa alguna celda solida en la posicion dada. Por defecto usa
+// PLAYER_RADIUS, pero admite un radio mayor para busquedas de
+// spawn que necesiten margen extra de seguridad.
+bool CollidesAt(const glm::vec3& pos, float radius = PLAYER_RADIUS)
 {
     if (g_grid.IsSolidWorldPos(pos.x, pos.z)) return true;
 
@@ -209,8 +255,8 @@ bool CollidesAt(const glm::vec3& pos)
     for (int i = 0; i < SAMPLES; i++)
     {
         float angle = (2.0f * 3.14159265f * i) / SAMPLES;
-        float sx = pos.x + cosf(angle) * PLAYER_RADIUS;
-        float sz = pos.z + sinf(angle) * PLAYER_RADIUS;
+        float sx = pos.x + cosf(angle) * radius;
+        float sz = pos.z + sinf(angle) * radius;
         if (g_grid.IsSolidWorldPos(sx, sz)) return true;
     }
     return false;
@@ -324,8 +370,11 @@ int main()
     camera.Position = glm::vec3(center.x, g_worldAABB.min.y + PLAYER_EYE_HEIGHT, center.z);
     camera.MovementSpeed = PLAYER_WALK_SPEED;
 
-    // Si el spawn cae dentro de un obstaculo, buscamos en espiral el punto libre mas cercano.
-    if (CollidesAt(camera.Position))
+    // Buscamos un punto de spawn con margen extra (no solo "apenas libre"),
+    // para no aparecer pegado a una pared/columna y sentir la camara trabada
+    // desde el primer instante.
+    const float SPAWN_CLEARANCE = PLAYER_RADIUS + 0.2f;
+    if (CollidesAt(camera.Position, SPAWN_CLEARANCE))
     {
         bool found = false;
         for (int radius = 1; radius <= 60 && !found; radius++)
@@ -337,7 +386,7 @@ int main()
                 glm::vec3 candidate = camera.Position;
                 candidate.x = center.x + cosf(angle) * r;
                 candidate.z = center.z + sinf(angle) * r;
-                if (!CollidesAt(candidate))
+                if (!CollidesAt(candidate, SPAWN_CLEARANCE))
                 {
                     camera.Position.x = candidate.x;
                     camera.Position.z = candidate.z;
@@ -351,12 +400,23 @@ int main()
         << camera.Position.x << ", " << camera.Position.y << ", " << camera.Position.z
         << ")" << std::endl;
 
+    // Reseteamos el reloj aca (no antes): cargar el modelo puede tardar
+    // varios segundos, y si no hacemos esto el primer deltaTime del loop
+    // seria enorme, generando un salto de movimiento brusco que te deja
+    // "pegado" contra lo primero que encuentre.
+    lastFrame = static_cast<float>(glfwGetTime());
+
     // -------------------- Render loop --------------------
     while (!glfwWindowShouldClose(window))
     {
         float currentFrame = static_cast<float>(glfwGetTime());
         deltaTime = currentFrame - lastFrame;
         lastFrame = currentFrame;
+
+        // Limite de seguridad: si hay un frame lento (carga de textura,
+        // hitch del sistema, etc.), no dejamos que un deltaTime gigante
+        // mande al jugador de un salto contra una pared.
+        if (deltaTime > 0.1f) deltaTime = 0.1f;
 
         processInput(window);
 
