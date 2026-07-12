@@ -53,14 +53,14 @@ float garageScale = 1.0f;
 
 glm::vec3 flickerLightPos = glm::vec3(5.0f, 3.0f, 2.0f);
 glm::vec3 flickerLightColor = glm::vec3(1.0f, 1.0f, 0.95f);
-glm::vec3 ambientLightColor = glm::vec3(0.04f, 0.04f, 0.045f);
+glm::vec3 ambientLightColor = glm::vec3(0.02f, 0.02f, 0.025f); // Un poco más tenue para resaltar la luz focalizada
 
 // -------------------------------------------------------------------------------------
 // COLISIONES / LIMITES DEL GARAGE 
 // -------------------------------------------------------------------------------------
 float garageMinX = -0.744853f;
 float garageMaxX = 0.695734f;
-float garageMinZ = -1.03401f;
+float garageMinZ = -2.500000f; // Ampliado el rango Z para que puedas caminar hacia el teléfono al fondo
 float garageMaxZ = 1.00179f;
 float playerHeight = -0.1375f;
 
@@ -86,7 +86,7 @@ glm::vec3 crimeScenePos = glm::vec3(-0.05f, -0.228f, 0.60f);
 glm::vec3 bodyOriginalPos = glm::vec3(-0.08f, -0.22f, 0.50f);
 glm::vec3 llantasPos = glm::vec3(0.08f, -0.19f, -0.9f);
 glm::vec3 monsterPos = glm::vec3(0.00f, 50.0f, -0.5f);
-glm::vec3 phonePos = glm::vec3(-0.4f, 0.03f, -0.9f);
+glm::vec3 phonePos = glm::vec3(-0.4f, 0.03f, -1.05f);
 
 // AJUSTES DE ESCALA Y ROTACIÓN GENERAL
 float bodyScale = 0.018f;
@@ -97,11 +97,12 @@ float monsterScale = 0.07f;
 float phoneScale = 0.0016f;
 
 // =====================================================================================
-// *** PANEL DE CONTROL DEL MONSTRUO Y EVENTOS DE INTERACCIÓN
+//  PANEL DE CONTROL DEL MONSTRUO Y EVENTOS DE INTERACCIÓN
 // =====================================================================================
 bool jumpscareActive = false;
 bool jumpscareFinished = false;
 float jumpscareTimer = 0.0f;
+bool screamPlayed = false;
 
 float monsterHeightOffset = -0.205f;
 float monsterDistanceOffset = 0.20f;
@@ -115,13 +116,12 @@ bool callAnswered = false;
 
 float phoneCallTimer = 0.0f;
 
-float maxPhoneCallTime = 6.0f;       // Duración total de la luz roja en el teléfono tras contestar
-float timeBeforeJumpscare = 10.0f;    // El monstruo saldrá exactamente a los 10 segundos de iniciada la llamada
+float maxPhoneCallTime = 6.0f;
+float timeBeforeJumpscare = 10.0f;
 
 // Control de la luz roja focalizada sobre el teléfono
 bool phoneRedLightOn = false;
 
-// Variables obsoletas
 float text3DScale = 0.12f;
 glm::vec3 textPosOffset = glm::vec3(0.0f, 0.15f, 0.0f);
 
@@ -211,7 +211,7 @@ int main()
         timeElapsed += deltaTime;
         processInput(window);
 
-        // 1. Audio de fondo
+        // 1. Audio de fondo inicial
         if (!fondoPlayed && timeElapsed >= 0.0f)
         {
             playsound("music/Fondo.mp3", 0);
@@ -247,7 +247,14 @@ int main()
                 flashlightOn = false;
 
                 haltmusic();
+
                 playsound("music/suspenso.mp3", 0);
+
+                if (!screamPlayed)
+                {
+                    playsound("music/scream.mp3", 0);
+                    screamPlayed = true;
+                }
             }
         }
 
@@ -256,19 +263,19 @@ int main()
             jumpscareTimer += deltaTime;
             monsterPos = camera.Position + (camera.Front * monsterDistanceOffset) + (camera.Up * monsterHeightOffset);
 
-            if (jumpscareTimer >= 1.2f)
+            if (jumpscareTimer >= 1.6f)
             {
                 jumpscareActive = false;
                 jumpscareFinished = true;
                 horrorLightOn = false;
                 monsterPos = glm::vec3(0.00f, -50.0f, -0.5f);
                 flashlightOn = backupFlashlightState;
-                haltmusic();
             }
         }
 
+        // Se amplió un poco el rango de detección del teléfono por lo que ahora está más lejos
         float distanceToPhone = glm::distance(camera.Position, phonePos);
-        nearPhone = (distanceToPhone < 0.35f);
+        nearPhone = (distanceToPhone < 0.65f);
 
         // ================================
         // CONTROL DEL FONDO 
@@ -305,7 +312,7 @@ int main()
         ourShader.setVec3("dirLight.diffuse", glm::vec3(0.0f));
         ourShader.setVec3("dirLight.specular", glm::vec3(0.0f));
 
-        // --- PUNTO DE LUZ 0 (Techo del Garage) ---
+        // --- PUNTO DE LUZ 0 ---
         ourShader.setVec3("pointLights[0].position", flickerLightPos);
         if (jumpscareActive) {
             ourShader.setVec3("pointLights[0].ambient", glm::vec3(0.0f));
@@ -321,7 +328,7 @@ int main()
         ourShader.setFloat("pointLights[0].linear", 0.09f);
         ourShader.setFloat("pointLights[0].quadratic", 0.032f);
 
-        // --- PUNTO DE LUZ 1 (Luz del Teléfono / Aro de Luz del Monstruo) ---
+        // --- PUNTO DE LUZ 1 (Luz del Teléfono - Estilo El Exorcista) ---
         if (jumpscareActive && horrorLightOn)
         {
             glm::vec3 monsterFaceLightColor = glm::vec3(0.35f, 0.4f, 0.5f);
@@ -338,16 +345,18 @@ int main()
         else if (phoneRedLightOn)
         {
             float phoneFlicker = HorrorFlicker(currentFrame * 5.0f);
-            glm::vec3 phoneLightColor = glm::vec3(0.9f, 0.0f, 0.0f);
+            glm::vec3 phoneLightColor = glm::vec3(0.9f, 0.1f, 0.1f); // Tono rojizo místico
 
-            ourShader.setVec3("pointLights[1].position", phonePos);
+            // Ponemos la luz elevada directamente encima del teléfono, simulando un poste/foco directo
+            ourShader.setVec3("pointLights[1].position", phonePos + glm::vec3(0.0f, 2.5f, 0.0f));
             ourShader.setVec3("pointLights[1].ambient", phoneLightColor * 0.01f * phoneFlicker);
-            ourShader.setVec3("pointLights[1].diffuse", phoneLightColor * phoneFlicker * 4.0f);
-            ourShader.setVec3("pointLights[1].specular", phoneLightColor * phoneFlicker * 4.0f);
+            ourShader.setVec3("pointLights[1].diffuse", phoneLightColor * phoneFlicker * 6.0f); // Más intensa
+            ourShader.setVec3("pointLights[1].specular", phoneLightColor * phoneFlicker * 6.0f);
 
+            // Valores de atenuación bajos para generar el haz nítido de luz de arriba a abajo
             ourShader.setFloat("pointLights[1].constant", 1.0f);
-            ourShader.setFloat("pointLights[1].linear", 4.5f);
-            ourShader.setFloat("pointLights[1].quadratic", 9.0f);
+            ourShader.setFloat("pointLights[1].linear", 0.1f);
+            ourShader.setFloat("pointLights[1].quadratic", 0.05f);
         }
         else
         {
@@ -489,11 +498,33 @@ int main()
     return 0;
 }
 
+// DELIMITACIÓN DE LOS OBJETOS 
 void ClampPlayerToGarage()
 {
+    // 1. Límites generales de las paredes del garaje
     camera.Position.x = glm::clamp(camera.Position.x, garageMinX, garageMaxX);
     camera.Position.z = glm::clamp(camera.Position.z, garageMinZ, garageMaxZ);
     camera.Position.y = playerHeight;
+
+    // 2. Delimitación de las Llantas 
+    float tireRadius = 0.15f;
+    float distToTires = glm::distance(glm::vec2(camera.Position.x, camera.Position.z), glm::vec2(llantasPos.x, llantasPos.z));
+    if (distToTires < tireRadius)
+    {
+        glm::vec2 direction = glm::normalize(glm::vec2(camera.Position.x, camera.Position.z) - glm::vec2(llantasPos.x, llantasPos.z));
+        camera.Position.x = llantasPos.x + direction.x * tireRadius;
+        camera.Position.z = llantasPos.z + direction.y * tireRadius;
+    }
+
+    // 3. Delimitación del Teléfono
+    float phoneRadius = 0.15f;
+    float distToPhone = glm::distance(glm::vec2(camera.Position.x, camera.Position.z), glm::vec2(phonePos.x, phonePos.z));
+    if (distToPhone < phoneRadius)
+    {
+        glm::vec2 direction = glm::normalize(glm::vec2(camera.Position.x, camera.Position.z) - glm::vec2(phonePos.x, phonePos.z));
+        camera.Position.x = phonePos.x + direction.x * phoneRadius;
+        camera.Position.z = phonePos.z + direction.y * phoneRadius;
+    }
 }
 
 float HorrorFlicker(float time)
@@ -515,7 +546,6 @@ void processInput(GLFWwindow* window)
     float baseSpeed = debugMode ? 0.5f : 0.2f;
     camera.MovementSpeed = baseSpeed;
 
-    // Control de volumen de la musica (flechas arriba y abajo)
     bool upPressed = glfwGetKey(window, GLFW_KEY_UP) == GLFW_PRESS;
     if (upPressed && !upKeyPressedLastFrame)
     {
