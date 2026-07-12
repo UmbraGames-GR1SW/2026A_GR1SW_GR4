@@ -596,7 +596,8 @@ float HorrorFlicker(float time)
 void processInput(GLFWwindow* window)
 {
     float baseSpeed = debugMode ? 0.5f : 0.2f;
-    camera.MovementSpeed = baseSpeed;
+    bool isRunning = (glfwGetKey(window, GLFW_KEY_LEFT_SHIFT) == GLFW_PRESS || glfwGetKey(window, GLFW_KEY_RIGHT_SHIFT) == GLFW_PRESS);
+    camera.MovementSpeed = isRunning ? (baseSpeed * 2.0f) : baseSpeed;
 
     bool upPressed = glfwGetKey(window, GLFW_KEY_UP) == GLFW_PRESS;
     if (upPressed && !upKeyPressedLastFrame)
