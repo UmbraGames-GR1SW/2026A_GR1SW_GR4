@@ -1,7 +1,7 @@
 // ============================================================
-// main.cpp - Adaptado para cargar el modelo del Warehouse
-// Colisiones AUTOMATICAS por malla (paredes, puertas, sillas,
-// columnas, etc.), escala automatica y camara dentro del piso.
+// main.cpp - Warehouse con colision por GRILLA 2D basada en
+// triangulos reales (no bounding boxes por objeto). Esto respeta
+// huecos/aberturas del modelo y evita "pegarse" a las paredes.
 // ============================================================
 
 #include <glad/glad.h>
@@ -21,6 +21,7 @@
 #include <algorithm>
 #include <vector>
 #include <cfloat>
+#include <cmath>
 
 // ---------------------------------------------------------
 // Callbacks / funciones auxiliares
@@ -39,23 +40,31 @@ const unsigned int SCR_HEIGHT = 720;
 // ---------------------------------------------------------
 // Configuración de escala / jugador
 // ---------------------------------------------------------
-const float TARGET_BUILDING_SIZE = 40.0f;  // ancho horizontal deseado del edificio
+const float TARGET_BUILDING_SIZE = 40.0f;
 const float PLAYER_EYE_HEIGHT = 1.7f;
 const float PLAYER_WALK_SPEED = 3.0f;
 const float PLAYER_RADIUS = 0.3f;
-const bool  MODEL_IS_Z_UP = false; // poner true si el modelo aparece "acostado"
+const bool  MODEL_IS_Z_UP = false;
 
-// Umbral para decidir si una malla es "piso/techo" y por lo tanto
-// NO debe bloquear el movimiento horizontal. Una malla se considera
-// piso/techo si cubre casi todo el ancho/profundidad del edificio Y
-// es muy delgada en altura.
-const float FLOOR_CEILING_FOOTPRINT_RATIO = 0.85f; // 85% del ancho/profundidad total
-const float FLOOR_CEILING_MAX_HEIGHT = 0.6f;       // grosor maximo en unidades de mundo
+// -----------------------------------------------------------
+// Franja de altura que SI cuenta para colision (relativa al piso).
+// Todo triangulo cuyo rango de altura no toque esta franja se
+// ignora: asi el piso (muy abajo) y el techo/lamparas (muy arriba)
+// nunca bloquean el movimiento, sin necesidad de detectarlos "a mano".
+// -----------------------------------------------------------
+const float COLLISION_BAND_MIN = 0.15f; // por encima del piso
+const float COLLISION_BAND_MAX = 2.2f;  // hasta un poco mas alto que la cabeza
 
-// Indices de malla a excluir manualmente de las colisiones
-// (por ejemplo si alguna decoracion muy chica no deberia chocar,
-// o si el heuristico de piso/techo falla para algun caso puntual).
-// Se llenan mirando el listado [DEBUG] MESH que imprime la consola.
+// Tamano de celda de la grilla de colision (mas chico = mas preciso, mas memoria)
+const float GRID_CELL_SIZE = 0.4f;
+
+// Margen alrededor del edificio para poder salir por aberturas/puertas
+// y caminar un poco por el exterior sin chocar con un limite artificial.
+const float GRID_SAFETY_MARGIN = 8.0f;
+
+// Indices de malla a excluir por completo de la colision (por ejemplo
+// una lampara colgante, cables, o el "shell" exterior/techo si genera
+// falsos positivos). Se llenan mirando la consola si algo bloquea mal.
 std::vector<int> excludedMeshIndices = { };
 
 // ---------------------------------------------------------
@@ -73,128 +82,152 @@ float deltaTime = 0.0f;
 float lastFrame = 0.0f;
 
 // ---------------------------------------------------------
-// Colisiones (AABB)
+// AABB simple (solo se usa para medir el modelo, ya no para colisionar)
 // ---------------------------------------------------------
 struct AABB {
     glm::vec3 min;
     glm::vec3 max;
 };
 
-struct MeshBoxInfo {
-    int index;
-    AABB localBox;
-    AABB worldBox;
+// ---------------------------------------------------------
+// Grilla de colision 2D (XZ). Cada celda es "solida" o "libre".
+// ---------------------------------------------------------
+struct CollisionGrid {
+    float originX = 0.0f, originZ = 0.0f;
+    float cellSize = GRID_CELL_SIZE;
+    int width = 0, depth = 0;
+    std::vector<char> solid;
+
+    inline int ToIndex(int ix, int iz) const { return iz * width + ix; }
+    inline bool InBounds(int ix, int iz) const { return ix >= 0 && ix < width && iz >= 0 && iz < depth; }
+
+    void MarkSolidCell(int ix, int iz)
+    {
+        if (InBounds(ix, iz)) solid[ToIndex(ix, iz)] = 1;
+    }
+
+    void MarkSolidWorldBox(float xmin, float xmax, float zmin, float zmax)
+    {
+        int ix0 = (int)std::floor((xmin - originX) / cellSize);
+        int ix1 = (int)std::floor((xmax - originX) / cellSize);
+        int iz0 = (int)std::floor((zmin - originZ) / cellSize);
+        int iz1 = (int)std::floor((zmax - originZ) / cellSize);
+        for (int iz = iz0; iz <= iz1; iz++)
+            for (int ix = ix0; ix <= ix1; ix++)
+                MarkSolidCell(ix, iz);
+    }
+
+    bool IsSolidWorldPos(float x, float z) const
+    {
+        int ix = (int)std::floor((x - originX) / cellSize);
+        int iz = (int)std::floor((z - originZ) / cellSize);
+        if (!InBounds(ix, iz)) return false; // fuera de la grilla = zona abierta, no bloquea
+        return solid[ToIndex(ix, iz)] != 0;
+    }
 };
 
-AABB g_worldAABB;
-std::vector<MeshBoxInfo> g_meshBoxes;   // una caja por cada malla del modelo
-std::vector<AABB> collisionWalls;       // subconjunto de g_meshBoxes usado para colisionar
+CollisionGrid g_grid;
 
-AABB ComputeLocalAABB(const std::vector<Vertex>& vertices)
+// -----------------------------------------------------------
+// Construye la grilla de colision recorriendo TODOS los triangulos
+// del modelo. Un triangulo solo aporta colision si su rango de
+// altura Y cae dentro de la franja jugador (COLLISION_BAND_*),
+// lo que excluye piso y techo automaticamente sin heuristicas
+// basadas en "tamano total de la malla".
+// -----------------------------------------------------------
+void BuildCollisionGrid(Model& model, const glm::mat4& modelMatrix, const AABB& worldBounds)
 {
-    glm::vec3 vmin(FLT_MAX), vmax(-FLT_MAX);
-    for (auto& v : vertices) {
-        vmin = glm::min(vmin, v.Position);
-        vmax = glm::max(vmax, v.Position);
+    g_grid.cellSize = GRID_CELL_SIZE;
+    g_grid.originX = worldBounds.min.x - GRID_SAFETY_MARGIN;
+    g_grid.originZ = worldBounds.min.z - GRID_SAFETY_MARGIN;
+
+    float totalWidth = (worldBounds.max.x - worldBounds.min.x) + 2.0f * GRID_SAFETY_MARGIN;
+    float totalDepth = (worldBounds.max.z - worldBounds.min.z) + 2.0f * GRID_SAFETY_MARGIN;
+
+    g_grid.width = (int)std::ceil(totalWidth / g_grid.cellSize) + 1;
+    g_grid.depth = (int)std::ceil(totalDepth / g_grid.cellSize) + 1;
+    g_grid.solid.assign((size_t)g_grid.width * (size_t)g_grid.depth, 0);
+
+    float floorY = worldBounds.min.y;
+    float bandMin = floorY + COLLISION_BAND_MIN;
+    float bandMax = floorY + COLLISION_BAND_MAX;
+
+    long long trianglesUsed = 0;
+    long long trianglesTotal = 0;
+
+    for (size_t m = 0; m < model.meshes.size(); m++)
+    {
+        if (std::find(excludedMeshIndices.begin(), excludedMeshIndices.end(), (int)m) != excludedMeshIndices.end())
+            continue;
+
+        auto& verts = model.meshes[m].vertices;
+        auto& idx = model.meshes[m].indices;
+
+        for (size_t i = 0; i + 2 < idx.size(); i += 3)
+        {
+            trianglesTotal++;
+
+            glm::vec3 p0 = glm::vec3(modelMatrix * glm::vec4(verts[idx[i]].Position, 1.0f));
+            glm::vec3 p1 = glm::vec3(modelMatrix * glm::vec4(verts[idx[i + 1]].Position, 1.0f));
+            glm::vec3 p2 = glm::vec3(modelMatrix * glm::vec4(verts[idx[i + 2]].Position, 1.0f));
+
+            float yMin = std::min({ p0.y, p1.y, p2.y });
+            float yMax = std::max({ p0.y, p1.y, p2.y });
+
+            // Si el triangulo no toca la franja del jugador, se ignora
+            // (esto descarta piso y techo automaticamente).
+            if (yMax < bandMin || yMin > bandMax)
+                continue;
+
+            float xMin = std::min({ p0.x, p1.x, p2.x });
+            float xMax = std::max({ p0.x, p1.x, p2.x });
+            float zMin = std::min({ p0.z, p1.z, p2.z });
+            float zMax = std::max({ p0.z, p1.z, p2.z });
+
+            g_grid.MarkSolidWorldBox(xMin, xMax, zMin, zMax);
+            trianglesUsed++;
+        }
     }
-    return { vmin, vmax };
+
+    long long solidCells = 0;
+    for (char c : g_grid.solid) if (c) solidCells++;
+
+    std::cout << "[DEBUG] Grilla: " << g_grid.width << " x " << g_grid.depth
+        << " celdas (" << g_grid.cellSize << " unidades c/u)" << std::endl;
+    std::cout << "[DEBUG] Triangulos totales: " << trianglesTotal
+        << " | usados para colision: " << trianglesUsed << std::endl;
+    std::cout << "[DEBUG] Celdas solidas: " << solidCells << " / " << g_grid.solid.size() << std::endl;
 }
 
-AABB TransformAABB(const AABB& local, const glm::mat4& model)
+// Revisa si el cuerpo del jugador (circulo de radio PLAYER_RADIUS)
+// pisa alguna celda solida en la posicion dada.
+bool CollidesAt(const glm::vec3& pos)
 {
-    glm::vec3 corners[8] = {
-        {local.min.x, local.min.y, local.min.z},
-        {local.max.x, local.min.y, local.min.z},
-        {local.min.x, local.max.y, local.min.z},
-        {local.min.x, local.min.y, local.max.z},
-        {local.max.x, local.max.y, local.min.z},
-        {local.max.x, local.min.y, local.max.z},
-        {local.min.x, local.max.y, local.max.z},
-        {local.max.x, local.max.y, local.max.z},
-    };
-    glm::vec3 vmin(FLT_MAX), vmax(-FLT_MAX);
-    for (auto& c : corners) {
-        glm::vec3 wc = glm::vec3(model * glm::vec4(c, 1.0f));
-        vmin = glm::min(vmin, wc);
-        vmax = glm::max(vmax, wc);
+    if (g_grid.IsSolidWorldPos(pos.x, pos.z)) return true;
+
+    const int SAMPLES = 8;
+    for (int i = 0; i < SAMPLES; i++)
+    {
+        float angle = (2.0f * 3.14159265f * i) / SAMPLES;
+        float sx = pos.x + cosf(angle) * PLAYER_RADIUS;
+        float sz = pos.z + sinf(angle) * PLAYER_RADIUS;
+        if (g_grid.IsSolidWorldPos(sx, sz)) return true;
     }
-    return { vmin, vmax };
+    return false;
 }
 
-bool CollidesWithAABB(const glm::vec3& pos, const AABB& box, float radius)
-{
-    return (pos.x + radius > box.min.x && pos.x - radius < box.max.x &&
-        pos.y + radius > box.min.y && pos.y - radius < box.max.y &&
-        pos.z + radius > box.min.z && pos.z - radius < box.max.z);
-}
-
-glm::vec3 TryMove(const glm::vec3& currentPos, const glm::vec3& delta, const AABB& worldBounds)
+// Movimiento con "sliding" por eje, usando la grilla en vez de AABBs.
+glm::vec3 TryMove(const glm::vec3& currentPos, const glm::vec3& delta)
 {
     glm::vec3 newPos = currentPos;
 
     glm::vec3 testX = newPos + glm::vec3(delta.x, 0.0f, 0.0f);
-    bool blockedX = false;
-    for (auto& w : collisionWalls) {
-        if (CollidesWithAABB(testX, w, PLAYER_RADIUS)) { blockedX = true; break; }
-    }
-    if (!blockedX) newPos.x = testX.x;
+    if (!CollidesAt(testX)) newPos.x = testX.x;
 
     glm::vec3 testZ = newPos + glm::vec3(0.0f, 0.0f, delta.z);
-    bool blockedZ = false;
-    for (auto& w : collisionWalls) {
-        if (CollidesWithAABB(testZ, w, PLAYER_RADIUS)) { blockedZ = true; break; }
-    }
-    if (!blockedZ) newPos.z = testZ.z;
-
-    newPos.x = std::clamp(newPos.x, worldBounds.min.x + PLAYER_RADIUS, worldBounds.max.x - PLAYER_RADIUS);
-    newPos.z = std::clamp(newPos.z, worldBounds.min.z + PLAYER_RADIUS, worldBounds.max.z - PLAYER_RADIUS);
+    if (!CollidesAt(testZ)) newPos.z = testZ.z;
 
     return newPos;
-}
-
-// -----------------------------------------------------------
-// Genera una caja de colision por cada malla del modelo y arma
-// collisionWalls excluyendo piso/techo (para no bloquear el
-// movimiento) y cualquier indice en excludedMeshIndices.
-// -----------------------------------------------------------
-void BuildMeshCollisionData(Model& model, const glm::mat4& modelMatrix, const AABB& worldBounds)
-{
-    g_meshBoxes.clear();
-    collisionWalls.clear();
-
-    float worldWidth = worldBounds.max.x - worldBounds.min.x;
-    float worldDepth = worldBounds.max.z - worldBounds.min.z;
-
-    std::cout << "[DEBUG] Total de mallas en el modelo: " << model.meshes.size() << std::endl;
-
-    for (size_t i = 0; i < model.meshes.size(); i++)
-    {
-        AABB local = ComputeLocalAABB(model.meshes[i].vertices);
-        AABB world = TransformAABB(local, modelMatrix);
-        glm::vec3 size = world.max - world.min;
-
-        MeshBoxInfo info{ (int)i, local, world };
-        g_meshBoxes.push_back(info);
-
-        bool excludedManually = std::find(excludedMeshIndices.begin(), excludedMeshIndices.end(), (int)i) != excludedMeshIndices.end();
-
-        bool coversFullFootprint = (size.x > worldWidth * FLOOR_CEILING_FOOTPRINT_RATIO) &&
-            (size.z > worldDepth * FLOOR_CEILING_FOOTPRINT_RATIO);
-        bool isFlat = size.y < FLOOR_CEILING_MAX_HEIGHT;
-        bool looksLikeFloorOrCeiling = coversFullFootprint && isFlat;
-
-        std::cout << "  [MESH " << i << "] size=(" << size.x << ", " << size.y << ", " << size.z << ")"
-            << (looksLikeFloorOrCeiling ? "  -> tratado como PISO/TECHO (no bloquea)" : "")
-            << (excludedManually ? "  -> EXCLUIDO manualmente" : "")
-            << std::endl;
-
-        if (excludedManually || looksLikeFloorOrCeiling)
-            continue;
-
-        collisionWalls.push_back(world);
-    }
-
-    std::cout << "[DEBUG] Mallas usadas como obstaculos solidos: " << collisionWalls.size() << std::endl;
 }
 
 int main()
@@ -237,7 +270,7 @@ int main()
     // -------------------- Carga del modelo --------------------
     Model ourModel("C:/Users/redin/source/repos/2026A_GR1SW_GR4/ProyectoBimestral/model/Warehouse/abandoned_warehouse_-_interior_scene/Sin_nombre.obj");
 
-    // -------------------- AABB local completo (todas las mallas) --------------------
+    // -------------------- AABB local completo (para medir/escalar) --------------------
     glm::vec3 vmin(FLT_MAX), vmax(-FLT_MAX);
     for (auto& mesh : ourModel.meshes)
         for (auto& v : mesh.vertices) {
@@ -262,36 +295,54 @@ int main()
     warehouseModelMatrix = glm::translate(warehouseModelMatrix, glm::vec3(0.0f, -localBox.min.y * autoScale, 0.0f));
     warehouseModelMatrix = glm::scale(warehouseModelMatrix, glm::vec3(autoScale));
 
-    // -------------------- AABB de mundo (edificio completo) --------------------
-    g_worldAABB = TransformAABB(localBox, warehouseModelMatrix);
+    // -------------------- AABB de mundo (edificio completo, solo para medir) --------------------
+    glm::vec3 wmin(FLT_MAX), wmax(-FLT_MAX);
+    {
+        glm::vec3 corners[8] = {
+            {localBox.min.x, localBox.min.y, localBox.min.z}, {localBox.max.x, localBox.min.y, localBox.min.z},
+            {localBox.min.x, localBox.max.y, localBox.min.z}, {localBox.min.x, localBox.min.y, localBox.max.z},
+            {localBox.max.x, localBox.max.y, localBox.min.z}, {localBox.max.x, localBox.min.y, localBox.max.z},
+            {localBox.min.x, localBox.max.y, localBox.max.z}, {localBox.max.x, localBox.max.y, localBox.max.z},
+        };
+        for (auto& c : corners) {
+            glm::vec3 wc = glm::vec3(warehouseModelMatrix * glm::vec4(c, 1.0f));
+            wmin = glm::min(wmin, wc);
+            wmax = glm::max(wmax, wc);
+        }
+    }
+    AABB g_worldAABB{ wmin, wmax };
     std::cout << "[DEBUG] AABB de mundo: min("
         << g_worldAABB.min.x << ", " << g_worldAABB.min.y << ", " << g_worldAABB.min.z
         << ") max(" << g_worldAABB.max.x << ", " << g_worldAABB.max.y << ", " << g_worldAABB.max.z
         << ")" << std::endl;
 
-    // -------------------- Colisiones por malla (paredes, puertas, sillas, etc.) --------------------
-    BuildMeshCollisionData(ourModel, warehouseModelMatrix, g_worldAABB);
+    // -------------------- Grilla de colision (paredes, columnas, sillas, etc.) --------------------
+    BuildCollisionGrid(ourModel, warehouseModelMatrix, g_worldAABB);
 
     // -------------------- Spawn de la cámara --------------------
     glm::vec3 center = (g_worldAABB.min + g_worldAABB.max) * 0.5f;
     camera.Position = glm::vec3(center.x, g_worldAABB.min.y + PLAYER_EYE_HEIGHT, center.z);
     camera.MovementSpeed = PLAYER_WALK_SPEED;
 
-    // Si el spawn cae dentro de un obstaculo (columna, mesa, etc.),
-    // lo empujamos hacia el punto libre mas cercano en X (busqueda simple).
+    // Si el spawn cae dentro de un obstaculo, buscamos en espiral el punto libre mas cercano.
+    if (CollidesAt(camera.Position))
     {
-        bool insideSolid = true;
-        float step = 0.5f;
-        int tries = 0;
-        while (insideSolid && tries < 200)
+        bool found = false;
+        for (int radius = 1; radius <= 60 && !found; radius++)
         {
-            insideSolid = false;
-            for (auto& w : collisionWalls) {
-                if (CollidesWithAABB(camera.Position, w, PLAYER_RADIUS)) { insideSolid = true; break; }
-            }
-            if (insideSolid) {
-                camera.Position.x += step;
-                tries++;
+            float r = radius * (GRID_CELL_SIZE * 0.5f);
+            for (int a = 0; a < 16 && !found; a++)
+            {
+                float angle = (2.0f * 3.14159265f * a) / 16;
+                glm::vec3 candidate = camera.Position;
+                candidate.x = center.x + cosf(angle) * r;
+                candidate.z = center.z + sinf(angle) * r;
+                if (!CollidesAt(candidate))
+                {
+                    camera.Position.x = candidate.x;
+                    camera.Position.z = candidate.z;
+                    found = true;
+                }
             }
         }
     }
@@ -364,7 +415,7 @@ void processInput(GLFWwindow* window)
     if (glfwGetKey(window, GLFW_KEY_A) == GLFW_PRESS) delta -= right * velocity;
     if (glfwGetKey(window, GLFW_KEY_D) == GLFW_PRESS) delta += right * velocity;
 
-    camera.Position = TryMove(camera.Position, delta, g_worldAABB);
+    camera.Position = TryMove(camera.Position, delta);
 }
 
 void framebuffer_size_callback(GLFWwindow* window, int width, int height)
