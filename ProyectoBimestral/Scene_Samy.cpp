@@ -76,6 +76,7 @@ bool upKeyPressedLastFrame = false;
 bool downKeyPressedLastFrame = false;
 
 bool backupFlashlightState = true;
+Model* garageModelPtr = nullptr;
 
 // -------------------------------------------------------------------------------------
 // EVENTOS Y TRASLADOS 
@@ -180,6 +181,8 @@ int main()
 
     // ---- CARGA DE MODELOS ----
     Model garageModel("./model/garage/garage.obj");
+    garageModelPtr = &garageModel;
+    garageModel.buildCollisionGrid(0.25f);
     Model crimeSceneModel("./model/crime_scene/crime_scene.obj");
     Model bodyModel("./model/body/body.obj");
     Model llantasModel("./model/llantas/llantas.obj");
@@ -425,6 +428,11 @@ int main()
             ourShader.setMat4("model", garageMat);
             garageModel.Draw(ourShader);
 
+            // Draw hitbox / OBB if debug mode is active
+            if (debugMode) {
+                garageModel.drawHitbox(ourShader, garageMat);
+            }
+
             if (crimeSceneRender) {
                 glm::mat4 crimeSceneMat = glm::mat4(1.0f);
                 crimeSceneMat = glm::translate(crimeSceneMat, crimeScenePos);
@@ -521,6 +529,13 @@ int main()
 // DELIMITACIÓN DE LOS OBJETOS 
 void ClampPlayerToGarage()
 {
+    // Perform detailed voxel grid collision detection and sliding resolution
+    if (garageModelPtr) {
+        glm::mat4 garageMat = glm::mat4(1.0f);
+        garageMat = glm::scale(garageMat, glm::vec3(garageScale));
+        garageModelPtr->checkCollision(camera.Position, 0.02f, garageMat);
+    }
+
     camera.Position.x = glm::clamp(camera.Position.x, garageMinX, garageMaxX);
     camera.Position.z = glm::clamp(camera.Position.z, garageMinZ, garageMaxZ);
     camera.Position.y = playerHeight;

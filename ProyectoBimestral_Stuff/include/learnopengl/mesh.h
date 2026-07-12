@@ -39,6 +39,7 @@ public:
     vector<Texture>      textures;
     unsigned int VAO;
     glm::vec3 diffuseColor;
+    string name = "";
 
     // constructor
     Mesh(vector<Vertex> vertices, vector<unsigned int> indices, vector<Texture> textures, glm::vec3 diffuse = glm::vec3(1.0f))
@@ -47,6 +48,20 @@ public:
         this->indices = indices;
         this->textures = textures;
         this->diffuseColor = diffuse;
+        this->name = "";
+
+        // now that we have all the required data, set the vertex buffers and its attribute pointers.
+        setupMesh();
+    }
+
+    // overloaded constructor that accepts mesh name
+    Mesh(vector<Vertex> vertices, vector<unsigned int> indices, vector<Texture> textures, glm::vec3 diffuse, string name)
+    {
+        this->vertices = vertices;
+        this->indices = indices;
+        this->textures = textures;
+        this->diffuseColor = diffuse;
+        this->name = name;
 
         // now that we have all the required data, set the vertex buffers and its attribute pointers.
         setupMesh();

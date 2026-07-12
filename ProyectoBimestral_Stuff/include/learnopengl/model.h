@@ -19,7 +19,24 @@
 #include <iostream>
 #include <map>
 #include <vector>
+#include <algorithm>
+#include <cctype>
 using namespace std;
+
+struct Triangle {
+    glm::vec3 v0, v1, v2;
+};
+
+struct CollisionGrid {
+    glm::vec3 minBounds = glm::vec3(0.0f);
+    glm::vec3 maxBounds = glm::vec3(0.0f);
+    glm::vec3 cellSize = glm::vec3(1.0f);
+    int numCellsX = 0;
+    int numCellsY = 0;
+    int numCellsZ = 0;
+    std::vector<std::vector<std::vector<std::vector<Triangle>>>> cells;
+    bool isBuilt = false;
+};
 
 unsigned int TextureFromFile(const char *path, const string &directory, bool gamma = false);
 
@@ -31,6 +48,11 @@ public:
     vector<Mesh>    meshes;
     string directory;
     bool gammaCorrection;
+
+    CollisionGrid collisionGrid;
+    unsigned int boxVAO = 0;
+    unsigned int boxVBO = 0;
+    unsigned int boxEBO = 0;
 
     // constructor, expects a filepath to a 3D model.
     Model(string const &path, bool gamma = false) : gammaCorrection(gamma)
@@ -163,7 +185,7 @@ private:
         textures.insert(textures.end(), heightMaps.begin(), heightMaps.end());
         
         // return a mesh object created from the extracted mesh data
-        return Mesh(vertices, indices, textures, diff);
+        return Mesh(vertices, indices, textures, diff, mesh->mName.C_Str());
     }
 
     // checks all material textures of a given type and loads the textures if they're not loaded yet.
@@ -197,6 +219,277 @@ private:
             }
         }
         return textures;
+    }
+
+public:
+    void buildCollisionGrid(float targetCellSize = 0.25f)
+    {
+        glm::vec3 minB(1e10f);
+        glm::vec3 maxB(-1e10f);
+        bool hasValidVertices = false;
+
+        for (const auto& mesh : meshes) {
+            std::string lowerName = mesh.name;
+            std::transform(lowerName.begin(), lowerName.end(), lowerName.begin(), ::tolower);
+            if (lowerName.find("sky") != std::string::npos || lowerName.find("cielo") != std::string::npos) {
+                std::cout << "Collision Grid: Ignored background mesh: " << mesh.name << std::endl;
+                continue;
+            }
+
+            for (const auto& vertex : mesh.vertices) {
+                minB = glm::min(minB, vertex.Position);
+                maxB = glm::max(maxB, vertex.Position);
+                hasValidVertices = true;
+            }
+        }
+
+        if (!hasValidVertices) {
+            std::cout << "Collision Grid: No valid vertices found to build collision grid." << std::endl;
+            collisionGrid.isBuilt = false;
+            return;
+        }
+
+        minB -= glm::vec3(0.01f);
+        maxB += glm::vec3(0.01f);
+
+        collisionGrid.minBounds = minB;
+        collisionGrid.maxBounds = maxB;
+
+        glm::vec3 dims = maxB - minB;
+        collisionGrid.numCellsX = std::max(1, (int)std::ceil(dims.x / targetCellSize));
+        collisionGrid.numCellsY = std::max(1, (int)std::ceil(dims.y / targetCellSize));
+        collisionGrid.numCellsZ = std::max(1, (int)std::ceil(dims.z / targetCellSize));
+
+        collisionGrid.cellSize.x = dims.x / collisionGrid.numCellsX;
+        collisionGrid.cellSize.y = dims.y / collisionGrid.numCellsY;
+        collisionGrid.cellSize.z = dims.z / collisionGrid.numCellsZ;
+
+        collisionGrid.cells.resize(collisionGrid.numCellsX);
+        for (int x = 0; x < collisionGrid.numCellsX; ++x) {
+            collisionGrid.cells[x].resize(collisionGrid.numCellsY);
+            for (int y = 0; y < collisionGrid.numCellsY; ++y) {
+                collisionGrid.cells[x][y].resize(collisionGrid.numCellsZ);
+            }
+        }
+
+        int totalTriangles = 0;
+
+        for (const auto& mesh : meshes) {
+            std::string lowerName = mesh.name;
+            std::transform(lowerName.begin(), lowerName.end(), lowerName.begin(), ::tolower);
+            if (lowerName.find("sky") != std::string::npos || lowerName.find("cielo") != std::string::npos) {
+                continue;
+            }
+
+            for (size_t i = 0; i + 2 < mesh.indices.size(); i += 3) {
+                Triangle tri;
+                tri.v0 = mesh.vertices[mesh.indices[i]].Position;
+                tri.v1 = mesh.vertices[mesh.indices[i+1]].Position;
+                tri.v2 = mesh.vertices[mesh.indices[i+2]].Position;
+
+                glm::vec3 triMin = glm::min(tri.v0, glm::min(tri.v1, tri.v2));
+                glm::vec3 triMax = glm::max(tri.v0, glm::max(tri.v1, tri.v2));
+
+                int minX = glm::clamp((int)std::floor((triMin.x - minB.x) / collisionGrid.cellSize.x), 0, collisionGrid.numCellsX - 1);
+                int maxX = glm::clamp((int)std::floor((triMax.x - minB.x) / collisionGrid.cellSize.x), 0, collisionGrid.numCellsX - 1);
+
+                int minY = glm::clamp((int)std::floor((triMin.y - minB.y) / collisionGrid.cellSize.y), 0, collisionGrid.numCellsY - 1);
+                int maxY = glm::clamp((int)std::floor((triMax.y - minB.y) / collisionGrid.cellSize.y), 0, collisionGrid.numCellsY - 1);
+
+                int minZ = glm::clamp((int)std::floor((triMin.z - minB.z) / collisionGrid.cellSize.z), 0, collisionGrid.numCellsZ - 1);
+                int maxZ = glm::clamp((int)std::floor((triMax.z - minB.z) / collisionGrid.cellSize.z), 0, collisionGrid.numCellsZ - 1);
+
+                for (int x = minX; x <= maxX; ++x) {
+                    for (int y = minY; y <= maxY; ++y) {
+                        for (int z = minZ; z <= maxZ; ++z) {
+                            collisionGrid.cells[x][y][z].push_back(tri);
+                        }
+                    }
+                }
+                totalTriangles++;
+            }
+        }
+
+        std::cout << "Collision Grid Built successfully! bounds: (" 
+                  << dims.x << ", " << dims.y << ", " << dims.z << "), grid size: "
+                  << collisionGrid.numCellsX << "x" << collisionGrid.numCellsY << "x" << collisionGrid.numCellsZ
+                  << ", total triangles: " << totalTriangles << std::endl;
+
+        if (boxVAO == 0) {
+            glGenVertexArrays(1, &boxVAO);
+            glGenBuffers(1, &boxVBO);
+            glGenBuffers(1, &boxEBO);
+        }
+
+        glm::vec3 min = collisionGrid.minBounds;
+        glm::vec3 max = collisionGrid.maxBounds;
+
+        float boxVertices[] = {
+            min.x, min.y, min.z,
+            max.x, min.y, min.z,
+            max.x, max.y, min.z,
+            min.x, max.y, min.z,
+            min.x, min.y, max.z,
+            max.x, min.y, max.z,
+            max.x, max.y, max.z,
+            min.x, max.y, max.z
+        };
+
+        unsigned int boxIndices[] = {
+            0, 1, 1, 2, 2, 3, 3, 0,
+            4, 5, 5, 6, 6, 7, 7, 4,
+            0, 4, 1, 5, 2, 6, 3, 7
+        };
+
+        glBindVertexArray(boxVAO);
+        glBindBuffer(GL_ARRAY_BUFFER, boxVBO);
+        glBufferData(GL_ARRAY_BUFFER, sizeof(boxVertices), boxVertices, GL_STATIC_DRAW);
+
+        glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, boxEBO);
+        glBufferData(GL_ELEMENT_ARRAY_BUFFER, sizeof(boxIndices), boxIndices, GL_STATIC_DRAW);
+
+        glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 3 * sizeof(float), (void*)0);
+        glEnableVertexAttribArray(0);
+
+        glBindVertexArray(0);
+
+        collisionGrid.isBuilt = true;
+    }
+
+    bool checkCollision(glm::vec3 &playerPosition, float sphereRadius, const glm::mat4 &modelMatrix)
+    {
+        if (!collisionGrid.isBuilt) return false;
+
+        glm::mat4 invModel = glm::inverse(modelMatrix);
+        glm::vec4 localPos4 = invModel * glm::vec4(playerPosition, 1.0f);
+        glm::vec3 localPos = glm::vec3(localPos4) / localPos4.w;
+
+        float scale = glm::length(glm::vec3(modelMatrix[0]));
+        float localRadius = sphereRadius / scale;
+
+        glm::vec3 localMin = localPos - glm::vec3(localRadius);
+        glm::vec3 localMax = localPos + glm::vec3(localRadius);
+
+        int minCellX = glm::clamp((int)std::floor((localMin.x - collisionGrid.minBounds.x) / collisionGrid.cellSize.x), 0, collisionGrid.numCellsX - 1);
+        int maxCellX = glm::clamp((int)std::floor((localMax.x - collisionGrid.minBounds.x) / collisionGrid.cellSize.x), 0, collisionGrid.numCellsX - 1);
+
+        int minCellY = glm::clamp((int)std::floor((localMin.y - collisionGrid.minBounds.y) / collisionGrid.cellSize.y), 0, collisionGrid.numCellsY - 1);
+        int maxCellY = glm::clamp((int)std::floor((localMax.y - collisionGrid.minBounds.y) / collisionGrid.cellSize.y), 0, collisionGrid.numCellsY - 1);
+
+        int minCellZ = glm::clamp((int)std::floor((localMin.z - collisionGrid.minBounds.z) / collisionGrid.cellSize.z), 0, collisionGrid.numCellsZ - 1);
+        int maxCellZ = glm::clamp((int)std::floor((localMax.z - collisionGrid.minBounds.z) / collisionGrid.cellSize.z), 0, collisionGrid.numCellsZ - 1);
+
+        bool collided = false;
+        std::vector<Triangle> candidateTriangles;
+
+        for (int x = minCellX; x <= maxCellX; ++x) {
+            for (int y = minCellY; y <= maxCellY; ++y) {
+                for (int z = minCellZ; z <= maxCellZ; ++z) {
+                    for (const auto& tri : collisionGrid.cells[x][y][z]) {
+                        candidateTriangles.push_back(tri);
+                    }
+                }
+            }
+        }
+
+        for (int iter = 0; iter < 3; ++iter) {
+            bool localCollision = false;
+
+            for (const auto& tri : candidateTriangles) {
+                glm::vec3 closestPoint = ClosestPointOnTriangle(localPos, tri.v0, tri.v1, tri.v2);
+                glm::vec3 toPlayer = localPos - closestPoint;
+                float dist = glm::length(toPlayer);
+
+                if (dist < localRadius) {
+                    glm::vec3 normal;
+                    if (dist > 0.0001f) {
+                        normal = toPlayer / dist;
+                    } else {
+                        normal = glm::normalize(glm::cross(tri.v1 - tri.v0, tri.v2 - tri.v0));
+                    }
+
+                    float penetration = localRadius - dist;
+                    localPos += normal * penetration;
+                    localCollision = true;
+                    collided = true;
+                }
+            }
+
+            if (!localCollision) break;
+        }
+
+        if (collided) {
+            glm::vec4 worldPos4 = modelMatrix * glm::vec4(localPos, 1.0f);
+            playerPosition = glm::vec3(worldPos4) / worldPos4.w;
+        }
+
+        return collided;
+    }
+
+    void drawOBB(Shader &shader, const glm::mat4 &modelMatrix)
+    {
+        if (!collisionGrid.isBuilt || boxVAO == 0) return;
+
+        shader.use();
+        shader.setMat4("model", modelMatrix);
+        shader.setVec3("materialColor", glm::vec3(0.0f, 1.0f, 0.0f));
+        shader.setBool("useMaterialColor", true);
+
+        glBindVertexArray(boxVAO);
+        glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
+        glLineWidth(2.0f);
+        glDrawElements(GL_LINES, 24, GL_UNSIGNED_INT, 0);
+        glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
+        glBindVertexArray(0);
+    }
+
+    void drawHitbox(Shader &shader, const glm::mat4 &modelMatrix)
+    {
+        drawOBB(shader, modelMatrix);
+    }
+
+private:
+    glm::vec3 ClosestPointOnTriangle(glm::vec3 p, glm::vec3 a, glm::vec3 b, glm::vec3 c)
+    {
+        glm::vec3 ab = b - a;
+        glm::vec3 ac = c - a;
+        glm::vec3 ap = p - a;
+        float d1 = glm::dot(ab, ap);
+        float d2 = glm::dot(ac, ap);
+        if (d1 <= 0.0f && d2 <= 0.0f) return a;
+
+        glm::vec3 bp = p - b;
+        float d3 = glm::dot(ab, bp);
+        float d4 = glm::dot(ac, bp);
+        if (d3 >= 0.0f && d4 <= d3) return b;
+
+        float vc = d1*d4 - d3*d2;
+        if (vc <= 0.0f && d1 >= 0.0f && d3 <= 0.0f) {
+            float v = d1 / (d1 - d3);
+            return a + v * ab;
+        }
+
+        glm::vec3 cp = p - c;
+        float d5 = glm::dot(ab, cp);
+        float d6 = glm::dot(ac, cp);
+        if (d6 >= 0.0f && d5 <= d6) return c;
+
+        float vb = d5*d2 - d1*d6;
+        if (vb <= 0.0f && d2 >= 0.0f && d6 <= 0.0f) {
+            float w = d2 / (d2 - d6);
+            return a + w * ac;
+        }
+
+        float va = d3*d6 - d5*d4;
+        if (va <= 0.0f && (d4 - d3) >= 0.0f && (d5 - d6) >= 0.0f) {
+            float w = (d4 - d3) / ((d4 - d3) + (d5 - d6));
+            return b + w * (c - b);
+        }
+
+        float denom = 1.0f / (va + vb + vc);
+        float v = vb * denom;
+        float w = vc * denom;
+        return a + ab * v + ac * w;
     }
 };
 
