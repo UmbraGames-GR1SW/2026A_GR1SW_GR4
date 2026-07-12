@@ -1,8 +1,7 @@
 // ============================================================
 // main.cpp - Adaptado para cargar el modelo del Warehouse
-// Con detección de colisiones (AABB), escala automática a un
-// tamaño "realista" y cámara inicializada DENTRO del modelo,
-// a la altura del piso (no encima del edificio).
+// Colisiones AUTOMATICAS por malla (paredes, puertas, sillas,
+// columnas, etc.), escala automatica y camara dentro del piso.
 // ============================================================
 
 #include <glad/glad.h>
@@ -40,27 +39,27 @@ const unsigned int SCR_HEIGHT = 720;
 // ---------------------------------------------------------
 // Configuración de escala / jugador
 // ---------------------------------------------------------
-// Tamaño horizontal deseado del edificio en unidades de mundo.
-// Si 1 unidad ~ 1 metro, 40 unidades es un warehouse grande.
-const float TARGET_BUILDING_SIZE = 40.0f;
-
-// Altura de los ojos del jugador sobre el piso (en unidades de mundo)
+const float TARGET_BUILDING_SIZE = 40.0f;  // ancho horizontal deseado del edificio
 const float PLAYER_EYE_HEIGHT = 1.7f;
-
-// Velocidad de caminata (unidades de mundo por segundo).
-// Con TARGET_BUILDING_SIZE = 40 y esto en 3.0f, cruzar el
-// edificio de punta a punta toma ~13 segundos caminando derecho.
 const float PLAYER_WALK_SPEED = 3.0f;
-
-// Radio "de cuerpo" del jugador para colisiones
 const float PLAYER_RADIUS = 0.3f;
+const bool  MODEL_IS_Z_UP = false; // poner true si el modelo aparece "acostado"
 
-// Si tu modelo se ve "acostado" (viene en Z-up en vez de Y-up),
-// poné esto en true para corregirlo automáticamente.
-const bool MODEL_IS_Z_UP = false;
+// Umbral para decidir si una malla es "piso/techo" y por lo tanto
+// NO debe bloquear el movimiento horizontal. Una malla se considera
+// piso/techo si cubre casi todo el ancho/profundidad del edificio Y
+// es muy delgada en altura.
+const float FLOOR_CEILING_FOOTPRINT_RATIO = 0.85f; // 85% del ancho/profundidad total
+const float FLOOR_CEILING_MAX_HEIGHT = 0.6f;       // grosor maximo en unidades de mundo
+
+// Indices de malla a excluir manualmente de las colisiones
+// (por ejemplo si alguna decoracion muy chica no deberia chocar,
+// o si el heuristico de piso/techo falla para algun caso puntual).
+// Se llenan mirando el listado [DEBUG] MESH que imprime la consola.
+std::vector<int> excludedMeshIndices = { };
 
 // ---------------------------------------------------------
-// Cámara (posición real se calcula en main() según el AABB)
+// Cámara
 // ---------------------------------------------------------
 Camera camera(glm::vec3(0.0f, 2.0f, 8.0f));
 float lastX = SCR_WIDTH / 2.0f;
@@ -81,17 +80,22 @@ struct AABB {
     glm::vec3 max;
 };
 
-AABB g_worldAABB;
-std::vector<AABB> collisionWalls; // paredes/columnas internas, se llenan a mano
+struct MeshBoxInfo {
+    int index;
+    AABB localBox;
+    AABB worldBox;
+};
 
-AABB ComputeModelLocalAABB(Model& model)
+AABB g_worldAABB;
+std::vector<MeshBoxInfo> g_meshBoxes;   // una caja por cada malla del modelo
+std::vector<AABB> collisionWalls;       // subconjunto de g_meshBoxes usado para colisionar
+
+AABB ComputeLocalAABB(const std::vector<Vertex>& vertices)
 {
     glm::vec3 vmin(FLT_MAX), vmax(-FLT_MAX);
-    for (auto& mesh : model.meshes) {
-        for (auto& v : mesh.vertices) {
-            vmin = glm::min(vmin, v.Position);
-            vmax = glm::max(vmax, v.Position);
-        }
+    for (auto& v : vertices) {
+        vmin = glm::min(vmin, v.Position);
+        vmax = glm::max(vmax, v.Position);
     }
     return { vmin, vmax };
 }
@@ -148,6 +152,51 @@ glm::vec3 TryMove(const glm::vec3& currentPos, const glm::vec3& delta, const AAB
     return newPos;
 }
 
+// -----------------------------------------------------------
+// Genera una caja de colision por cada malla del modelo y arma
+// collisionWalls excluyendo piso/techo (para no bloquear el
+// movimiento) y cualquier indice en excludedMeshIndices.
+// -----------------------------------------------------------
+void BuildMeshCollisionData(Model& model, const glm::mat4& modelMatrix, const AABB& worldBounds)
+{
+    g_meshBoxes.clear();
+    collisionWalls.clear();
+
+    float worldWidth = worldBounds.max.x - worldBounds.min.x;
+    float worldDepth = worldBounds.max.z - worldBounds.min.z;
+
+    std::cout << "[DEBUG] Total de mallas en el modelo: " << model.meshes.size() << std::endl;
+
+    for (size_t i = 0; i < model.meshes.size(); i++)
+    {
+        AABB local = ComputeLocalAABB(model.meshes[i].vertices);
+        AABB world = TransformAABB(local, modelMatrix);
+        glm::vec3 size = world.max - world.min;
+
+        MeshBoxInfo info{ (int)i, local, world };
+        g_meshBoxes.push_back(info);
+
+        bool excludedManually = std::find(excludedMeshIndices.begin(), excludedMeshIndices.end(), (int)i) != excludedMeshIndices.end();
+
+        bool coversFullFootprint = (size.x > worldWidth * FLOOR_CEILING_FOOTPRINT_RATIO) &&
+            (size.z > worldDepth * FLOOR_CEILING_FOOTPRINT_RATIO);
+        bool isFlat = size.y < FLOOR_CEILING_MAX_HEIGHT;
+        bool looksLikeFloorOrCeiling = coversFullFootprint && isFlat;
+
+        std::cout << "  [MESH " << i << "] size=(" << size.x << ", " << size.y << ", " << size.z << ")"
+            << (looksLikeFloorOrCeiling ? "  -> tratado como PISO/TECHO (no bloquea)" : "")
+            << (excludedManually ? "  -> EXCLUIDO manualmente" : "")
+            << std::endl;
+
+        if (excludedManually || looksLikeFloorOrCeiling)
+            continue;
+
+        collisionWalls.push_back(world);
+    }
+
+    std::cout << "[DEBUG] Mallas usadas como obstaculos solidos: " << collisionWalls.size() << std::endl;
+}
+
 int main()
 {
     // -------------------- Inicialización GLFW --------------------
@@ -188,59 +237,68 @@ int main()
     // -------------------- Carga del modelo --------------------
     Model ourModel("C:/Users/redin/source/repos/2026A_GR1SW_GR4/ProyectoBimestral/model/Warehouse/abandoned_warehouse_-_interior_scene/Sin_nombre.obj");
 
-    // -------------------- AABB local (tamaño original del modelo) --------------------
-    AABB localBox = ComputeModelLocalAABB(ourModel);
+    // -------------------- AABB local completo (todas las mallas) --------------------
+    glm::vec3 vmin(FLT_MAX), vmax(-FLT_MAX);
+    for (auto& mesh : ourModel.meshes)
+        for (auto& v : mesh.vertices) {
+            vmin = glm::min(vmin, v.Position);
+            vmax = glm::max(vmax, v.Position);
+        }
+    AABB localBox{ vmin, vmax };
     glm::vec3 localSize = localBox.max - localBox.min;
 
-    std::cout << "[DEBUG] Tamano local del modelo (sin escalar): "
+    std::cout << "[DEBUG] Tamano local del modelo completo (sin escalar): "
         << localSize.x << " x " << localSize.y << " x " << localSize.z << std::endl;
 
     // -------------------- Escala automática --------------------
-    // Escala uniforme para que la dimension horizontal mas grande
-    // (X o Z) del modelo termine midiendo TARGET_BUILDING_SIZE.
     float horizontalExtent = std::max(localSize.x, localSize.z);
     float autoScale = (horizontalExtent > 0.0001f) ? (TARGET_BUILDING_SIZE / horizontalExtent) : 1.0f;
-
     std::cout << "[DEBUG] Escala automatica calculada: " << autoScale << std::endl;
 
     glm::mat4 warehouseModelMatrix = glm::mat4(1.0f);
-
     if (MODEL_IS_Z_UP)
-    {
-        // Corrige modelos exportados en Z-up (Blender/Sketchfab) a Y-up
         warehouseModelMatrix = glm::rotate(warehouseModelMatrix, glm::radians(-90.0f), glm::vec3(1.0f, 0.0f, 0.0f));
-    }
 
-    // Traslada para que el piso (min.y del modelo YA escalado) quede en y = 0
     warehouseModelMatrix = glm::translate(warehouseModelMatrix, glm::vec3(0.0f, -localBox.min.y * autoScale, 0.0f));
     warehouseModelMatrix = glm::scale(warehouseModelMatrix, glm::vec3(autoScale));
 
-    // -------------------- AABB de mundo --------------------
+    // -------------------- AABB de mundo (edificio completo) --------------------
     g_worldAABB = TransformAABB(localBox, warehouseModelMatrix);
-
     std::cout << "[DEBUG] AABB de mundo: min("
         << g_worldAABB.min.x << ", " << g_worldAABB.min.y << ", " << g_worldAABB.min.z
         << ") max(" << g_worldAABB.max.x << ", " << g_worldAABB.max.y << ", " << g_worldAABB.max.z
         << ")" << std::endl;
 
+    // -------------------- Colisiones por malla (paredes, puertas, sillas, etc.) --------------------
+    BuildMeshCollisionData(ourModel, warehouseModelMatrix, g_worldAABB);
+
     // -------------------- Spawn de la cámara --------------------
-    // Centro horizontal del edificio, a nivel de piso + altura de ojos.
-    // Si el spawn cae dentro de una columna o maquinaria, movelo unas
-    // unidades en X o Z hasta que quede en un pasillo libre.
     glm::vec3 center = (g_worldAABB.min + g_worldAABB.max) * 0.5f;
     camera.Position = glm::vec3(center.x, g_worldAABB.min.y + PLAYER_EYE_HEIGHT, center.z);
     camera.MovementSpeed = PLAYER_WALK_SPEED;
 
+    // Si el spawn cae dentro de un obstaculo (columna, mesa, etc.),
+    // lo empujamos hacia el punto libre mas cercano en X (busqueda simple).
+    {
+        bool insideSolid = true;
+        float step = 0.5f;
+        int tries = 0;
+        while (insideSolid && tries < 200)
+        {
+            insideSolid = false;
+            for (auto& w : collisionWalls) {
+                if (CollidesWithAABB(camera.Position, w, PLAYER_RADIUS)) { insideSolid = true; break; }
+            }
+            if (insideSolid) {
+                camera.Position.x += step;
+                tries++;
+            }
+        }
+    }
+
     std::cout << "[DEBUG] Camara inicial en: ("
         << camera.Position.x << ", " << camera.Position.y << ", " << camera.Position.z
         << ")" << std::endl;
-
-    // -------------------- Paredes/columnas internas --------------------
-    // Vacio por defecto. Jugá, topá con una pared, presioná F1 para
-    // imprimir la posición actual de la cámara en consola, y agregá
-    // la caja correspondiente aquí, por ejemplo:
-    //
-    // collisionWalls.push_back({ glm::vec3(-2.0f, 0.0f, -5.0f), glm::vec3(2.0f, 3.0f, -4.5f) });
 
     // -------------------- Render loop --------------------
     while (!glfwWindowShouldClose(window))
@@ -281,17 +339,13 @@ void processInput(GLFWwindow* window)
     if (glfwGetKey(window, GLFW_KEY_ESCAPE) == GLFW_PRESS)
         glfwSetWindowShouldClose(window, true);
 
-    // Tecla de debug: imprime la posicion actual de la camara.
-    // Util para calibrar collisionWalls a mano.
     static bool f1WasPressed = false;
     if (glfwGetKey(window, GLFW_KEY_F1) == GLFW_PRESS)
     {
         if (!f1WasPressed)
-        {
             std::cout << "[DEBUG] camera.Position = ("
-                << camera.Position.x << ", " << camera.Position.y << ", " << camera.Position.z
-                << ")" << std::endl;
-        }
+            << camera.Position.x << ", " << camera.Position.y << ", " << camera.Position.z
+            << ")" << std::endl;
         f1WasPressed = true;
     }
     else
