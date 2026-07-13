@@ -149,8 +149,8 @@
     <ClCompile Include="main_warehouse.cpp" />
   </ItemGroup>
   <ItemGroup>
-    <None Include="light_billboard.fs" />
-    <None Include="light_billboard.vs" />
+    <None Include="shaders\light_billboard.fs" />
+    <None Include="shaders\light_billboard.vs" />
     <None Include="shaders\model_loading.fs" />
     <None Include="shaders\model_loading.vs" />
   </ItemGroup>

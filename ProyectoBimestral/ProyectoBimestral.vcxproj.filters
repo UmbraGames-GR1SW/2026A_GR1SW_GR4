@@ -32,10 +32,10 @@
     <None Include="shaders\model_loading.vs">
       <Filter>Archivos de origen\shaders</Filter>
     </None>
-    <None Include="light_billboard.fs">
+    <None Include="shaders\light_billboard.fs">
       <Filter>Archivos de origen\shaders</Filter>
     </None>
-    <None Include="light_billboard.vs">
+    <None Include="shaders\light_billboard.vs">
       <Filter>Archivos de origen\shaders</Filter>
     </None>
   </ItemGroup>

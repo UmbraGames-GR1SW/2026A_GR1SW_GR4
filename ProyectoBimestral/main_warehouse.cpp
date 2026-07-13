@@ -42,6 +42,16 @@ const unsigned int SCR_HEIGHT = 720;
 // ---------------------------------------------------------
 const float TARGET_BUILDING_SIZE = 40.0f;
 const float PLAYER_EYE_HEIGHT = 1.7f;
+
+// -----------------------------------------------------------
+// Esquina de spawn: 0.0 = pegado a la pared del minimo de ese eje,
+// 1.0 = pegado a la pared del maximo, 0.5 = centro. Para spawnear en
+// la esquina OPUESTA a la puerta, probar las 4 combinaciones (0,0),
+// (1,0), (0,1), (1,1) y quedarse con la que quede lejos de la puerta
+// (no sabemos de este lado del codigo donde esta la puerta exactamente).
+// -----------------------------------------------------------
+const float SPAWN_X_FRAC = 0.1f;
+const float SPAWN_Z_FRAC = 0.1f;
 const float PLAYER_WALK_SPEED = 3.0f;
 const float PLAYER_RADIUS = 0.3f;
 const bool  MODEL_IS_Z_UP = false;
@@ -128,20 +138,34 @@ const glm::vec3 FOG_COLOR = glm::vec3(0.03f, 0.01f, 0.01f); // negro con tinte r
 const float FOG_DENSITY = 0.009f;
 
 // -----------------------------------------------------------
-// Focos de techo: la luz roja ahora sale de puntos reales del modelo
-// (los focos/lamparas colgadas del techo) en vez de ser un glow parejo.
-// Se detectan automaticamente: mallas chicas ubicadas cerca del techo.
-// Si la deteccion automatica falla, llenar manualLightMeshIndices con
-// los indices reales (mirando el listado [MESH i] de la consola) y
-// esos van a tener prioridad sobre la deteccion automatica.
+// Focos de techo: la luz roja sale de puntos sobre el techo real del
+// edificio. Hay 3 formas de definir esos puntos, en este orden de
+// prioridad:
+//   1) manualLightMeshIndices (si lo llenas, siempre gana)
+//   2) deteccion automatica por geometria (USE_AUTO_DETECTED_CEILING_LIGHTS)
+//   3) GRILLA PAREJA por todo el techo (por defecto, mas confiable)
 //
-// Ahora ademas se dibuja una "bombilla" visible (billboard con glow) en
-// cada posicion, asi podes VER en el juego si coincide con una lampara
-// real o no, y corregir manualLightMeshIndices con esa referencia.
+// La deteccion automatica probo confundir lamparas con dinteles/marcos
+// de puerta en este modelo, asi que por defecto queda DESACTIVADA y se
+// usa la grilla: reparte NxM puntos por TODO el techo del edificio (con
+// margen hacia adentro de las paredes), lo que garantiza luz en ambos
+// lados del edificio sin depender de adivinar que malla es una lampara.
+//
+// Ademas se dibuja una "bombilla" visible (billboard con glow) en cada
+// posicion, asi podes VER en el juego donde esta cada foco.
 // -----------------------------------------------------------
-const float CEILING_LIGHT_MAX_FOOTPRINT = 4.0f;       // ancho/profundidad maxima para contar como "foco"
-const float CEILING_LIGHT_MIN_ELEVATION_FRAC = 0.65f; // debe estar en el 35% superior del edificio
-const int   MAX_RED_LIGHTS = 8;
+const bool  USE_AUTO_DETECTED_CEILING_LIGHTS = false; // recomendado: false (usar grilla)
+
+const float CEILING_LIGHT_MAX_FOOTPRINT = 1.5f;
+const float CEILING_LIGHT_MIN_ELEVATION_FRAC = 0.90f;
+const float CEILING_LIGHT_MIN_WALL_MARGIN = 1.5f;
+const float CEILING_LIGHT_MAX_ASPECT_RATIO = 2.0f;
+
+const int   CEILING_LIGHT_GRID_COLS = 3;
+const int   CEILING_LIGHT_GRID_ROWS = 3;
+const float CEILING_LIGHT_GRID_MARGIN_FRAC = 0.15f; // que tan adentro de las paredes arranca la grilla
+
+const int   MAX_RED_LIGHTS = 9; // 3x3
 std::vector<int> manualLightMeshIndices = { };
 
 // Tamano visual de la "bombilla" que se dibuja en cada foco (unidades de mundo)
@@ -307,22 +331,41 @@ void BuildCollisionGrid(Model& model, const glm::mat4& modelMatrix, const AABB& 
         float elevationFrac = (worldBounds.max.y > worldBounds.min.y)
             ? (meshCenter.y - floorY) / (worldBounds.max.y - floorY)
             : 0.0f;
-        float footprint = std::max(meshMax.x - meshMin.x, meshMax.z - meshMin.z);
+        float footprintX = meshMax.x - meshMin.x;
+        float footprintZ = meshMax.z - meshMin.z;
+        float footprint = std::max(footprintX, footprintZ);
+
+        // Distancia horizontal a la pared exterior mas cercana (usa el AABB
+        // completo del edificio como aproximacion del perimetro). Un dintel
+        // de puerta esta pegado a la pared -> distancia chica. Una lampara
+        // que cuelga del techo suele estar mas hacia adentro.
+        float distToWallX = std::min(meshCenter.x - worldBounds.min.x, worldBounds.max.x - meshCenter.x);
+        float distToWallZ = std::min(meshCenter.z - worldBounds.min.z, worldBounds.max.z - meshCenter.z);
+        float distToNearestWall = std::min(distToWallX, distToWallZ);
+
+        // Aspect ratio: un dintel/viga es angosto y largo (aspect ratio alto);
+        // una lampara es mas pareja en ambos ejes horizontales.
+        float aspectRatio = std::max(footprintX, footprintZ) / std::max(std::min(footprintX, footprintZ), 0.01f);
+
         bool isCeilingLightCandidate = !excludedManually &&
             footprint < CEILING_LIGHT_MAX_FOOTPRINT &&
-            elevationFrac > CEILING_LIGHT_MIN_ELEVATION_FRAC;
+            elevationFrac > CEILING_LIGHT_MIN_ELEVATION_FRAC &&
+            distToNearestWall > CEILING_LIGHT_MIN_WALL_MARGIN &&
+            aspectRatio < CEILING_LIGHT_MAX_ASPECT_RATIO;
         if (isCeilingLightCandidate)
             g_autoDetectedLightIndices.push_back((int)m);
 
         if (PRINT_MESH_DEBUG)
         {
             std::cout << "  [MESH " << m << "] verts=" << verts.size()
-                << " size=(" << (meshMax.x - meshMin.x) << ", " << meshHeight << ", " << (meshMax.z - meshMin.z) << ")"
+                << " size=(" << footprintX << ", " << meshHeight << ", " << footprintZ << ")"
                 << " elevacion=" << elevationAboveFloor
+                << " distPared=" << distToNearestWall
+                << " aspect=" << aspectRatio
                 << (isFloorClutter ? "  -> BASURA DE PISO (excluida auto)" : "")
                 << (isCeilingLightCandidate ? "  -> CANDIDATO A FOCO DE TECHO" : "")
                 << (excludedManually ? "  -> EXCLUIDA manualmente" : "")
-                << std::endl;
+                << "\n"; // "\n" en vez de std::endl: evita forzar un flush por cada malla (mas rapido si hay muchas)
         }
 
         // La exclusion MANUAL (ej. cables colgantes) descarta el objeto
@@ -393,7 +436,7 @@ void BuildCollisionGrid(Model& model, const glm::mat4& modelMatrix, const AABB& 
         }
         std::cout << "[DEBUG] Usando " << g_redLightPositions.size() << " foco(s) definidos manualmente en manualLightMeshIndices." << std::endl;
     }
-    else
+    else if (USE_AUTO_DETECTED_CEILING_LIGHTS && !g_autoDetectedLightIndices.empty())
     {
         for (int idx : g_autoDetectedLightIndices)
         {
@@ -403,22 +446,33 @@ void BuildCollisionGrid(Model& model, const glm::mat4& modelMatrix, const AABB& 
         std::cout << "[DEBUG] " << g_autoDetectedLightIndices.size() << " candidato(s) a foco de techo detectados automaticamente, usando "
             << g_redLightPositions.size() << "." << std::endl;
     }
-
-    // Respaldo: si no se detecto ni configuro ningun foco, repartimos varios
-    // puntos por el techo (no solo 1 en el centro) para que igual se sienta
-    // como "varias lamparas" y no como un solo glow central.
-    if (g_redLightPositions.empty())
+    else
     {
+        // Grilla pareja por todo el techo real del edificio: garantiza
+        // cobertura en TODOS los lados, sin depender de adivinar que
+        // malla es una lampara real.
+        float marginX = (worldBounds.max.x - worldBounds.min.x) * CEILING_LIGHT_GRID_MARGIN_FRAC;
+        float marginZ = (worldBounds.max.z - worldBounds.min.z) * CEILING_LIGHT_GRID_MARGIN_FRAC;
+        float xStart = worldBounds.min.x + marginX;
+        float xEnd = worldBounds.max.x - marginX;
+        float zStart = worldBounds.min.z + marginZ;
+        float zEnd = worldBounds.max.z - marginZ;
         float y = worldBounds.max.y - 0.3f;
-        float xA = worldBounds.min.x + (worldBounds.max.x - worldBounds.min.x) * 0.25f;
-        float xB = worldBounds.min.x + (worldBounds.max.x - worldBounds.min.x) * 0.75f;
-        float zA = worldBounds.min.z + (worldBounds.max.z - worldBounds.min.z) * 0.25f;
-        float zB = worldBounds.min.z + (worldBounds.max.z - worldBounds.min.z) * 0.75f;
-        g_redLightPositions = {
-            glm::vec3(xA, y, zA), glm::vec3(xB, y, zA),
-            glm::vec3(xA, y, zB), glm::vec3(xB, y, zB)
-        };
-        std::cout << "[DEBUG] No se detecto ningun foco de techo: usando 4 puntos de respaldo repartidos por el techo." << std::endl;
+
+        for (int r = 0; r < CEILING_LIGHT_GRID_ROWS; r++)
+        {
+            for (int c = 0; c < CEILING_LIGHT_GRID_COLS; c++)
+            {
+                if ((int)g_redLightPositions.size() >= MAX_RED_LIGHTS) break;
+                float tx = (CEILING_LIGHT_GRID_COLS > 1) ? (float)c / (float)(CEILING_LIGHT_GRID_COLS - 1) : 0.5f;
+                float tz = (CEILING_LIGHT_GRID_ROWS > 1) ? (float)r / (float)(CEILING_LIGHT_GRID_ROWS - 1) : 0.5f;
+                float x = xStart + tx * (xEnd - xStart);
+                float z = zStart + tz * (zEnd - zStart);
+                g_redLightPositions.push_back(glm::vec3(x, y, z));
+            }
+        }
+        std::cout << "[DEBUG] Usando grilla pareja de " << g_redLightPositions.size()
+            << " focos repartidos por todo el techo (cubre ambos lados del edificio)." << std::endl;
     }
 
     for (size_t i = 0; i < g_redLightPositions.size(); i++)
@@ -502,6 +556,15 @@ int main()
 
     glEnable(GL_DEPTH_TEST);
 
+    // Frame de "cargando" inmediato: sin esto, la ventana queda con
+    // contenido indefinido (se ve como colgada) mientras se cargan
+    // shaders, texturas y el modelo, que puede tardar varios segundos.
+    glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
+    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+    glfwSwapBuffers(window);
+    glfwPollEvents();
+    std::cout << "[DEBUG] Cargando modelo (puede tardar varios segundos si tiene muchas texturas/mallas)..." << std::endl;
+
     // -------------------- Shaders --------------------
     Shader ourShader("shaders/model_loading.vs", "shaders/model_loading.fs");
     Shader bulbShader("shaders/light_billboard.vs", "shaders/light_billboard.fs");
@@ -574,8 +637,12 @@ int main()
     BuildCollisionGrid(ourModel, warehouseModelMatrix, g_worldAABB);
 
     // -------------------- Spawn de la cámara --------------------
-    glm::vec3 center = (g_worldAABB.min + g_worldAABB.max) * 0.5f;
-    camera.Position = glm::vec3(center.x, g_worldAABB.min.y + PLAYER_EYE_HEIGHT, center.z);
+    glm::vec3 spawnTarget(
+        g_worldAABB.min.x + SPAWN_X_FRAC * (g_worldAABB.max.x - g_worldAABB.min.x),
+        g_worldAABB.min.y + PLAYER_EYE_HEIGHT,
+        g_worldAABB.min.z + SPAWN_Z_FRAC * (g_worldAABB.max.z - g_worldAABB.min.z)
+    );
+    camera.Position = spawnTarget;
     camera.MovementSpeed = PLAYER_WALK_SPEED;
 
     // Buscamos un punto de spawn con margen extra (no solo "apenas libre"),
@@ -592,8 +659,8 @@ int main()
             {
                 float angle = (2.0f * 3.14159265f * a) / 16;
                 glm::vec3 candidate = camera.Position;
-                candidate.x = center.x + cosf(angle) * r;
-                candidate.z = center.z + sinf(angle) * r;
+                candidate.x = spawnTarget.x + cosf(angle) * r;
+                candidate.z = spawnTarget.z + sinf(angle) * r;
                 if (!CollidesAt(candidate, SPAWN_CLEARANCE) && HasFloorAt(candidate))
                 {
                     camera.Position.x = candidate.x;
