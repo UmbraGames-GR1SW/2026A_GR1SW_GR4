@@ -415,8 +415,8 @@ int main()
         ourShader.setFloat("phoneLight.linear", 0.09f);
         ourShader.setFloat("phoneLight.quadratic", 0.032f);
         // Ángulos reducidos a la mitad para estrechar el círculo proyectado drásticamente
-        ourShader.setFloat("phoneLight.cutOff", glm::cos(glm::radians(5.0f)));
-        ourShader.setFloat("phoneLight.outerCutOff", glm::cos(glm::radians(7.5f)));
+        ourShader.setFloat("phoneLight.cutOff", glm::cos(glm::radians(2.0f)));
+        ourShader.setFloat("phoneLight.outerCutOff", glm::cos(glm::radians(3.5f)));
 
         // =========================================================================
         // DIBUJADO DE MODELOS 3D
