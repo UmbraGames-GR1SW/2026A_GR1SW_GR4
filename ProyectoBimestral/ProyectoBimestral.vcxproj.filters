@@ -18,19 +18,14 @@
     </Filter>
   </ItemGroup>
   <ItemGroup>
-    <ClCompile Include="Scene_Samy.cpp">
+    <ClCompile Include="glad.c">
       <Filter>Archivos de origen</Filter>
     </ClCompile>
-    <ClCompile Include="glad.c">
+    <ClCompile Include="Scene_Josue.cpp">
       <Filter>Archivos de origen</Filter>
     </ClCompile>
   </ItemGroup>
   <ItemGroup>
-    <None Include="shaders\Vertex_Samy.vs">
-      <Filter>Archivos de origen\shaders</Filter>
-    </None>
-    <None Include="shaders\Fragment_Samy.fs">
-      <Filter>Archivos de origen\shaders</Filter>
-    </None>
+    <None Include="Vertex_Josue.vs" />
   </ItemGroup>
 </Project>
