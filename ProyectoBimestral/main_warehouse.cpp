@@ -134,11 +134,23 @@ const float FOG_DENSITY = 0.009f;
 // Si la deteccion automatica falla, llenar manualLightMeshIndices con
 // los indices reales (mirando el listado [MESH i] de la consola) y
 // esos van a tener prioridad sobre la deteccion automatica.
+//
+// Ahora ademas se dibuja una "bombilla" visible (billboard con glow) en
+// cada posicion, asi podes VER en el juego si coincide con una lampara
+// real o no, y corregir manualLightMeshIndices con esa referencia.
 // -----------------------------------------------------------
-const float CEILING_LIGHT_MAX_FOOTPRINT = 3.0f;      // ancho/profundidad maxima para contar como "foco"
-const float CEILING_LIGHT_MIN_ELEVATION_FRAC = 0.75f; // debe estar en el 25% superior del edificio
+const float CEILING_LIGHT_MAX_FOOTPRINT = 4.0f;       // ancho/profundidad maxima para contar como "foco"
+const float CEILING_LIGHT_MIN_ELEVATION_FRAC = 0.65f; // debe estar en el 35% superior del edificio
 const int   MAX_RED_LIGHTS = 8;
 std::vector<int> manualLightMeshIndices = { };
+
+// Tamano visual de la "bombilla" que se dibuja en cada foco (unidades de mundo)
+const float LIGHT_BULB_SCALE = 0.6f;
+
+// Gradacion de color: la parte "neutra" de la escena (ambiente + linterna)
+// se desatura hacia gris, pero el rojo de las lamparas queda intacto y
+// bien saturado -- asi el rojo resalta mucho mas contra todo lo demas.
+const float DESATURATION_AMOUNT = 0.55f;
 
 // Indices de malla a excluir por completo de la colision (por ejemplo
 // una lampara colgante, cables, o el "shell" exterior/techo si genera
@@ -392,15 +404,21 @@ void BuildCollisionGrid(Model& model, const glm::mat4& modelMatrix, const AABB& 
             << g_redLightPositions.size() << "." << std::endl;
     }
 
-    // Respaldo: si no se detecto ni configuro ningun foco, usamos un
-    // punto por defecto en el centro del techo para no quedarnos sin luz roja.
+    // Respaldo: si no se detecto ni configuro ningun foco, repartimos varios
+    // puntos por el techo (no solo 1 en el centro) para que igual se sienta
+    // como "varias lamparas" y no como un solo glow central.
     if (g_redLightPositions.empty())
     {
-        glm::vec3 fallback((worldBounds.min.x + worldBounds.max.x) * 0.5f,
-            worldBounds.max.y - 0.3f,
-            (worldBounds.min.z + worldBounds.max.z) * 0.5f);
-        g_redLightPositions.push_back(fallback);
-        std::cout << "[DEBUG] No se detecto ningun foco de techo: usando 1 punto de respaldo en el centro del techo." << std::endl;
+        float y = worldBounds.max.y - 0.3f;
+        float xA = worldBounds.min.x + (worldBounds.max.x - worldBounds.min.x) * 0.25f;
+        float xB = worldBounds.min.x + (worldBounds.max.x - worldBounds.min.x) * 0.75f;
+        float zA = worldBounds.min.z + (worldBounds.max.z - worldBounds.min.z) * 0.25f;
+        float zB = worldBounds.min.z + (worldBounds.max.z - worldBounds.min.z) * 0.75f;
+        g_redLightPositions = {
+            glm::vec3(xA, y, zA), glm::vec3(xB, y, zA),
+            glm::vec3(xA, y, zB), glm::vec3(xB, y, zB)
+        };
+        std::cout << "[DEBUG] No se detecto ningun foco de techo: usando 4 puntos de respaldo repartidos por el techo." << std::endl;
     }
 
     for (size_t i = 0; i < g_redLightPositions.size(); i++)
@@ -486,6 +504,22 @@ int main()
 
     // -------------------- Shaders --------------------
     Shader ourShader("shaders/model_loading.vs", "shaders/model_loading.fs");
+    Shader bulbShader("shaders/light_billboard.vs", "shaders/light_billboard.fs");
+
+    // -------------------- Quad para las "bombillas" visibles --------------------
+    float bulbQuad[] = {
+        -0.5f, -0.5f,   0.5f, -0.5f,   0.5f, 0.5f,
+        -0.5f, -0.5f,   0.5f,  0.5f,  -0.5f, 0.5f,
+    };
+    unsigned int bulbVAO, bulbVBO;
+    glGenVertexArrays(1, &bulbVAO);
+    glGenBuffers(1, &bulbVBO);
+    glBindVertexArray(bulbVAO);
+    glBindBuffer(GL_ARRAY_BUFFER, bulbVBO);
+    glBufferData(GL_ARRAY_BUFFER, sizeof(bulbQuad), bulbQuad, GL_STATIC_DRAW);
+    glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 2 * sizeof(float), (void*)0);
+    glEnableVertexAttribArray(0);
+    glBindVertexArray(0);
 
     // -------------------- Carga del modelo --------------------
     Model ourModel("C:/Users/redin/source/repos/2026A_GR1SW_GR4/ProyectoBimestral/model/Warehouse/abandoned_warehouse_-_interior_scene/Sin_nombre.obj");
@@ -654,21 +688,73 @@ int main()
 
         ourShader.setFloat("flashlightFlicker", flashlightFlicker);
 
-        // Palpitar tipo latido para las luces rojas del techo
-        float pulse = RED_LIGHT_BASE_INTENSITY + RED_LIGHT_PULSE_AMOUNT *
-            (0.5f + 0.5f * sinf(currentFrame * RED_LIGHT_PULSE_SPEED));
+        // Palpitar tipo latido para las luces rojas del techo, pero cada
+        // lampara con su PROPIO desfase (golden angle) y su propio parpadeo
+        // ocasional -- que no esten todas sincronizadas da mucho mas
+        // ambiente de "instalacion electrica fallando" que un pulso unico.
+        const float GOLDEN_ANGLE = 2.399963f;
+        std::vector<float> perLightIntensity(g_redLightPositions.size());
+        for (size_t i = 0; i < g_redLightPositions.size(); i++)
+        {
+            float phase = (float)i * GOLDEN_ANGLE;
+            float wave = 0.5f + 0.5f * sinf(currentFrame * RED_LIGHT_PULSE_SPEED + phase);
+            float value = RED_LIGHT_BASE_INTENSITY + RED_LIGHT_PULSE_AMOUNT * wave;
+
+            // Parpadeo ocasional propio de esta lampara (mas lento que el de la linterna)
+            float lightFlickerStep = floorf(currentFrame / (FLICKER_STEP_DURATION * 4.0f));
+            float lightFlickerRoll = PseudoRandom01(lightFlickerStep * 5.13f + (float)i * 91.7f);
+            if (lightFlickerRoll < 0.06f)
+                value *= 0.15f;
+
+            perLightIntensity[i] = value;
+        }
+
         ourShader.setVec3("redLightColor", RED_LIGHT_COLOR);
-        ourShader.setFloat("redLightIntensity", pulse);
         ourShader.setInt("numRedLights", (int)g_redLightPositions.size());
         for (size_t i = 0; i < g_redLightPositions.size(); i++)
+        {
             ourShader.setVec3("redLightPositions[" + std::to_string(i) + "]", g_redLightPositions[i]);
+            ourShader.setFloat("redLightIntensities[" + std::to_string(i) + "]", perLightIntensity[i]);
+        }
 
-        // Niebla y vineta
+        // Niebla, vineta y gradacion de color
         ourShader.setVec3("fogColor", FOG_COLOR);
         ourShader.setFloat("fogDensity", FOG_DENSITY);
         ourShader.setVec2("screenSize", glm::vec2((float)SCR_WIDTH, (float)SCR_HEIGHT));
+        ourShader.setFloat("desaturation", DESATURATION_AMOUNT);
 
         ourModel.Draw(ourShader);
+
+        // -------- Bombillas visibles en cada foco de techo --------
+        // Sirve tanto para atmosfera (se ve un punto de luz real) como
+        // para depurar: si el punto no queda pegado a una lampara real
+        // del modelo, hay que ajustar manualLightMeshIndices.
+        glm::vec3 camRight = glm::normalize(glm::cross(camera.Front, camera.WorldUp));
+        glm::vec3 camUp = glm::normalize(glm::cross(camRight, camera.Front));
+
+        glDepthMask(GL_FALSE);
+        glEnable(GL_BLEND);
+        glBlendFunc(GL_SRC_ALPHA, GL_ONE);
+
+        bulbShader.use();
+        bulbShader.setMat4("view", view);
+        bulbShader.setMat4("projection", projection);
+        bulbShader.setVec3("camRight", camRight);
+        bulbShader.setVec3("camUp", camUp);
+        bulbShader.setVec3("billboardColor", RED_LIGHT_COLOR);
+        bulbShader.setFloat("billboardScale", LIGHT_BULB_SCALE);
+
+        glBindVertexArray(bulbVAO);
+        for (size_t i = 0; i < g_redLightPositions.size(); i++)
+        {
+            bulbShader.setVec3("billboardCenter", g_redLightPositions[i]);
+            bulbShader.setFloat("billboardIntensity", perLightIntensity[i] * 1.3f);
+            glDrawArrays(GL_TRIANGLES, 0, 6);
+        }
+        glBindVertexArray(0);
+
+        glDisable(GL_BLEND);
+        glDepthMask(GL_TRUE);
 
         glfwSwapBuffers(window);
         glfwPollEvents();

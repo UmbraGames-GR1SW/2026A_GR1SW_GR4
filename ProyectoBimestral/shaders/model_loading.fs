@@ -16,11 +16,12 @@ uniform float flashlightCutOff;
 uniform float flashlightOuterCutOff;
 uniform float flashlightFlicker; // 0..1, simula bateria vieja fallando / apagon real
 
-// Focos de techo: la luz roja sale de puntos reales del modelo
+// Focos de techo: la luz roja sale de puntos reales del modelo, cada uno
+// con su propia intensidad (permite parpadeo independiente por lampara)
 uniform vec3 redLightPositions[MAX_RED_LIGHTS];
+uniform float redLightIntensities[MAX_RED_LIGHTS];
 uniform int numRedLights;
 uniform vec3 redLightColor;
-uniform float redLightIntensity; // palpita con el tiempo (late)
 
 // Niebla: come la visibilidad lejana
 uniform vec3 fogColor;
@@ -29,16 +30,18 @@ uniform float fogDensity;
 // Vinieta: oscurece los bordes de pantalla
 uniform vec2 screenSize;
 
+// Gradacion: la parte "neutra" (ambiente + linterna) se desatura hacia
+// gris; el rojo de las lamparas se mantiene intacto y bien saturado.
+uniform float desaturation;
+
 void main()
 {
     vec3 texColor = texture(texture_diffuse1, TexCoords).rgb;
     vec3 norm = normalize(Normal);
 
-    // Ambiente casi nulo: la escena depende casi por completo de la linterna
+    // --- Parte "neutra": ambiente casi nulo + linterna ---
     vec3 ambient = 0.02 * texColor;
-    vec3 result = ambient;
 
-    // --- Linterna con parpadeo / apagon ---
     vec3 flDir = normalize(viewPos - FragPos);
     float flDiff = max(dot(norm, flDir), 0.0);
 
@@ -50,9 +53,14 @@ void main()
     float flAttenuation = 1.0 / (1.0 + 0.09 * flDistance + 0.032 * flDistance * flDistance);
 
     vec3 flashlightContribution = flDiff * texColor * flAttenuation * spotIntensity * flashlightFlicker * 1.8;
-    result += flashlightContribution;
 
-    // --- Focos rojos de techo: luces puntuales reales, no un glow parejo ---
+    vec3 neutral = ambient + flashlightContribution;
+
+    // Desaturar solo la parte neutra (gris frio tipo "found footage")
+    float luma = dot(neutral, vec3(0.299, 0.587, 0.114));
+    neutral = mix(neutral, vec3(luma), desaturation);
+
+    // --- Parte roja: focos de techo, cada uno con su propia intensidad ---
     vec3 redTotal = vec3(0.0);
     for (int i = 0; i < numRedLights; i++)
     {
@@ -61,13 +69,15 @@ void main()
         vec3 lightDir = toLight / max(dist, 0.001);
 
         float diff = max(dot(norm, lightDir), 0.0);
-        // Atenuacion mas fuerte que la linterna: cada foco ilumina una zona
-        // limitada debajo suyo, como una lampara real de techo.
-        float attenuation = 1.0 / (1.0 + 0.20 * dist + 0.09 * dist * dist);
+        // Atenuacion fuerte: cada foco ilumina una zona limitada debajo
+        // suyo, como una lampara real de techo, no todo el cuarto parejo.
+        float attenuation = 1.0 / (1.0 + 0.28 * dist + 0.13 * dist * dist);
 
-        redTotal += diff * attenuation * texColor;
+        redTotal += diff * attenuation * texColor * redLightIntensities[i];
     }
-    result += redLightColor * redLightIntensity * redTotal;
+    vec3 red = redLightColor * redTotal;
+
+    vec3 result = neutral + red;
 
     // --- Niebla: mientras mas lejos, mas se funde a negro/rojizo ---
     float fogFactor = 1.0 - exp(-fogDensity * flDistance * flDistance);
