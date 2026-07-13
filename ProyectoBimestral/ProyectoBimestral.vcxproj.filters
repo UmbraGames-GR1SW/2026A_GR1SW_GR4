@@ -19,6 +19,9 @@
     <Filter Include="Archivos de origen\fonts">
       <UniqueIdentifier>{217caa93-ee55-47cc-9af4-04a97b14fc12}</UniqueIdentifier>
     </Filter>
+    <Filter Include="Archivos de origen\audios">
+      <UniqueIdentifier>{1f8e36a0-fe95-4736-821e-3425daf980ae}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="Scene_Anahi.cpp">
@@ -54,7 +57,12 @@
     </ClInclude>
   </ItemGroup>
   <ItemGroup>
-    <Font Include="fonts\BlackOpsOne-Regular.ttf">
+    <Media Include="audios\miedo.mp3">
+      <Filter>Archivos de origen\audios</Filter>
+    </Media>
+  </ItemGroup>
+  <ItemGroup>
+    <Font Include="fonts\Bevan-Regular.ttf">
       <Filter>Archivos de origen\fonts</Filter>
     </Font>
   </ItemGroup>

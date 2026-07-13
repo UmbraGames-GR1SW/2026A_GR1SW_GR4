@@ -162,7 +162,10 @@
     <ClInclude Include="text_renderer.h" />
   </ItemGroup>
   <ItemGroup>
-    <Font Include="fonts\BlackOpsOne-Regular.ttf" />
+    <Media Include="audios\miedo.mp3" />
+  </ItemGroup>
+  <ItemGroup>
+    <Font Include="fonts\Bevan-Regular.ttf" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
