@@ -76,9 +76,30 @@ const bool PRINT_MESH_DEBUG = true;
 // Tamano de celda de la grilla de colision (mas chico = mas preciso, mas memoria)
 const float GRID_CELL_SIZE = 0.4f;
 
+// -----------------------------------------------------------
+// Mascara de "hay piso aca". Un triangulo cuenta como piso si su
+// punto mas bajo esta cerca del nivel del piso general (admite
+// pequenas rampas/escalones). Se usa para impedir salir del molde
+// real del piso, en vez de depender de un margen artificial.
+// -----------------------------------------------------------
+const float FLOOR_MASK_MAX_ELEVATION = 0.5f;
+
 // Margen alrededor del edificio para poder salir por aberturas/puertas
 // y caminar un poco por el exterior sin chocar con un limite artificial.
 const float GRID_SAFETY_MARGIN = 8.0f;
+
+// -----------------------------------------------------------
+// Iluminacion de terror: linterna (spotlight que sigue la camara) o,
+// en su lugar, una luz roja tenue que palpita como un latido. Se
+// alternan con la tecla F. Arranca con la linterna encendida.
+// -----------------------------------------------------------
+const float FLASHLIGHT_INNER_CUTOFF_DEG = 12.5f;
+const float FLASHLIGHT_OUTER_CUTOFF_DEG = 20.0f;
+
+const glm::vec3 RED_LIGHT_COLOR = glm::vec3(1.0f, 0.05f, 0.05f);
+const float RED_LIGHT_BASE_INTENSITY = 0.12f;  // nivel "de reposo" del palpitar
+const float RED_LIGHT_PULSE_AMOUNT = 0.10f;    // cuanto sube en cada latido
+const float RED_LIGHT_PULSE_SPEED = 1.6f;      // velocidad del palpitar (mas alto = mas rapido)
 
 // Indices de malla a excluir por completo de la colision (por ejemplo
 // una lampara colgante, cables, o el "shell" exterior/techo si genera
@@ -98,6 +119,9 @@ bool firstMouse = true;
 // ---------------------------------------------------------
 float deltaTime = 0.0f;
 float lastFrame = 0.0f;
+
+// Estado de iluminacion: true = linterna encendida, false = luz roja pulsante
+bool g_flashlightOn = true;
 
 // ---------------------------------------------------------
 // AABB simple (solo se usa para medir el modelo, ya no para colisionar)
@@ -144,7 +168,8 @@ struct CollisionGrid {
     }
 };
 
-CollisionGrid g_grid;
+CollisionGrid g_grid;      // 1 = bloqueado (pared, columna, silla, etc.)
+CollisionGrid g_floorMask; // 1 = hay piso real debajo
 
 // -----------------------------------------------------------
 // Construye la grilla de colision recorriendo TODOS los triangulos
@@ -165,6 +190,13 @@ void BuildCollisionGrid(Model& model, const glm::mat4& modelMatrix, const AABB& 
     g_grid.width = (int)std::ceil(totalWidth / g_grid.cellSize) + 1;
     g_grid.depth = (int)std::ceil(totalDepth / g_grid.cellSize) + 1;
     g_grid.solid.assign((size_t)g_grid.width * (size_t)g_grid.depth, 0);
+
+    g_floorMask.cellSize = g_grid.cellSize;
+    g_floorMask.originX = g_grid.originX;
+    g_floorMask.originZ = g_grid.originZ;
+    g_floorMask.width = g_grid.width;
+    g_floorMask.depth = g_grid.depth;
+    g_floorMask.solid.assign((size_t)g_floorMask.width * (size_t)g_floorMask.depth, 0);
 
     float floorY = worldBounds.min.y;
     float bandMin = floorY + COLLISION_BAND_MIN;
@@ -204,7 +236,13 @@ void BuildCollisionGrid(Model& model, const glm::mat4& modelMatrix, const AABB& 
                 << std::endl;
         }
 
-        if (excludedManually || isFloorClutter)
+        // La exclusion MANUAL (ej. cables colgantes) descarta el objeto
+        // por completo, tambien de la mascara de piso (tiene sentido:
+        // un cable colgado no es piso). La exclusion por "basura de
+        // piso" en cambio NO debe saltear la mascara de piso: si hay un
+        // cable/hoja tirado sobre el piso real, el piso real sigue
+        // estando ahi debajo.
+        if (excludedManually)
             continue;
 
         for (size_t i = 0; i + 2 < idx.size(); i += 3)
@@ -218,15 +256,24 @@ void BuildCollisionGrid(Model& model, const glm::mat4& modelMatrix, const AABB& 
             float yMin = std::min({ p0.y, p1.y, p2.y });
             float yMax = std::max({ p0.y, p1.y, p2.y });
 
-            // Si el triangulo no toca la franja del jugador, se ignora
-            // (esto descarta piso y techo automaticamente).
-            if (yMax < bandMin || yMin > bandMax)
-                continue;
-
             float xMin = std::min({ p0.x, p1.x, p2.x });
             float xMax = std::max({ p0.x, p1.x, p2.x });
             float zMin = std::min({ p0.z, p1.z, p2.z });
             float zMax = std::max({ p0.z, p1.z, p2.z });
+
+            // Mascara de piso: el triangulo cuenta como "hay piso aca" si
+            // su punto mas bajo esta cerca del nivel general del piso.
+            // Esto es independiente de si bloquea el paso o no.
+            if (yMin - floorY < FLOOR_MASK_MAX_ELEVATION)
+                g_floorMask.MarkSolidWorldBox(xMin, xMax, zMin, zMax);
+
+            // Colision: se salta si la malla entera es "basura de piso"
+            // o si el triangulo no toca la franja del jugador (esto
+            // descarta piso y techo automaticamente).
+            if (isFloorClutter)
+                continue;
+            if (yMax < bandMin || yMin > bandMax)
+                continue;
 
             g_grid.MarkSolidWorldBox(xMin, xMax, zMin, zMax);
             trianglesUsed++;
@@ -236,11 +283,22 @@ void BuildCollisionGrid(Model& model, const glm::mat4& modelMatrix, const AABB& 
     long long solidCells = 0;
     for (char c : g_grid.solid) if (c) solidCells++;
 
+    long long floorCells = 0;
+    for (char c : g_floorMask.solid) if (c) floorCells++;
+
     std::cout << "[DEBUG] Grilla: " << g_grid.width << " x " << g_grid.depth
         << " celdas (" << g_grid.cellSize << " unidades c/u)" << std::endl;
     std::cout << "[DEBUG] Triangulos totales: " << trianglesTotal
         << " | usados para colision: " << trianglesUsed << std::endl;
     std::cout << "[DEBUG] Celdas solidas: " << solidCells << " / " << g_grid.solid.size() << std::endl;
+    std::cout << "[DEBUG] Celdas con piso: " << floorCells << " / " << g_floorMask.solid.size() << std::endl;
+}
+
+// Hay piso pisable en esta posicion? (usa el centro del jugador, no el
+// radio completo, para no bloquear el borde del piso antes de tiempo).
+bool HasFloorAt(const glm::vec3& pos)
+{
+    return g_floorMask.IsSolidWorldPos(pos.x, pos.z);
 }
 
 // Revisa si el cuerpo del jugador (circulo de radio "radius")
@@ -263,15 +321,17 @@ bool CollidesAt(const glm::vec3& pos, float radius = PLAYER_RADIUS)
 }
 
 // Movimiento con "sliding" por eje, usando la grilla en vez de AABBs.
+// Un movimiento es valido si no choca con nada Y si hay piso real ahi
+// (evita salir del molde del piso del modelo).
 glm::vec3 TryMove(const glm::vec3& currentPos, const glm::vec3& delta)
 {
     glm::vec3 newPos = currentPos;
 
     glm::vec3 testX = newPos + glm::vec3(delta.x, 0.0f, 0.0f);
-    if (!CollidesAt(testX)) newPos.x = testX.x;
+    if (!CollidesAt(testX) && HasFloorAt(testX)) newPos.x = testX.x;
 
     glm::vec3 testZ = newPos + glm::vec3(0.0f, 0.0f, delta.z);
-    if (!CollidesAt(testZ)) newPos.z = testZ.z;
+    if (!CollidesAt(testZ) && HasFloorAt(testZ)) newPos.z = testZ.z;
 
     return newPos;
 }
@@ -374,7 +434,7 @@ int main()
     // para no aparecer pegado a una pared/columna y sentir la camara trabada
     // desde el primer instante.
     const float SPAWN_CLEARANCE = PLAYER_RADIUS + 0.2f;
-    if (CollidesAt(camera.Position, SPAWN_CLEARANCE))
+    if (CollidesAt(camera.Position, SPAWN_CLEARANCE) || !HasFloorAt(camera.Position))
     {
         bool found = false;
         for (int radius = 1; radius <= 60 && !found; radius++)
@@ -386,7 +446,7 @@ int main()
                 glm::vec3 candidate = camera.Position;
                 candidate.x = center.x + cosf(angle) * r;
                 candidate.z = center.z + sinf(angle) * r;
-                if (!CollidesAt(candidate, SPAWN_CLEARANCE))
+                if (!CollidesAt(candidate, SPAWN_CLEARANCE) && HasFloorAt(candidate))
                 {
                     camera.Position.x = candidate.x;
                     camera.Position.z = candidate.z;
@@ -432,6 +492,19 @@ int main()
         ourShader.setMat4("view", view);
         ourShader.setMat4("model", warehouseModelMatrix);
 
+        // -------- Iluminacion de terror --------
+        ourShader.setVec3("viewPos", camera.Position);
+        ourShader.setVec3("flashlightDir", camera.Front);
+        ourShader.setBool("flashlightOn", g_flashlightOn);
+        ourShader.setFloat("flashlightCutOff", cosf(glm::radians(FLASHLIGHT_INNER_CUTOFF_DEG)));
+        ourShader.setFloat("flashlightOuterCutOff", cosf(glm::radians(FLASHLIGHT_OUTER_CUTOFF_DEG)));
+
+        // Palpitar tipo latido: oscila entre BASE y BASE+PULSE con el tiempo
+        float pulse = RED_LIGHT_BASE_INTENSITY + RED_LIGHT_PULSE_AMOUNT *
+            (0.5f + 0.5f * sinf(currentFrame * RED_LIGHT_PULSE_SPEED));
+        ourShader.setVec3("redLightColor", RED_LIGHT_COLOR);
+        ourShader.setFloat("redLightIntensity", pulse);
+
         ourModel.Draw(ourShader);
 
         glfwSwapBuffers(window);
@@ -462,6 +535,22 @@ void processInput(GLFWwindow* window)
     else
     {
         f1WasPressed = false;
+    }
+
+    // Tecla F: alterna entre linterna y luz roja pulsante
+    static bool fWasPressed = false;
+    if (glfwGetKey(window, GLFW_KEY_F) == GLFW_PRESS)
+    {
+        if (!fWasPressed)
+        {
+            g_flashlightOn = !g_flashlightOn;
+            std::cout << "[DEBUG] Linterna " << (g_flashlightOn ? "ENCENDIDA" : "APAGADA (luz roja activa)") << std::endl;
+        }
+        fWasPressed = true;
+    }
+    else
+    {
+        fWasPressed = false;
     }
 
     float velocity = camera.MovementSpeed * deltaTime;
