@@ -107,8 +107,8 @@ float sceneMinZ = -4.5f;
 float sceneMaxZ = 3.0f;
 bool pKeyPressedLastFrame = false;
 
-const float CLOWN_COLLISION_RADIUS = 0.6f;   // < radio de jumpscare (1.1f)
-const float CHUKY_COLLISION_RADIUS = 0.5f;   // < radio de jumpscare (1.0f)
+const float CLOWN_COLLISION_RADIUS = 1.1f;   
+const float CHUKY_COLLISION_RADIUS = 1.0f;   
 const float HACHA_COLLISION_RADIUS = 0.8f;
 const float DANGER_COLLISION_RADIUS = 0.6f;
 const float MASCARA_COLLISION_RADIUS = 0.4f;
