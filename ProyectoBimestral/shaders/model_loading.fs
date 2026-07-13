@@ -7,49 +7,61 @@ in vec3 Normal;
 
 uniform sampler2D texture_diffuse1;
 
-// Camara / linterna
+// Linterna (siempre activa)
 uniform vec3 viewPos;
 uniform vec3 flashlightDir;
-uniform bool flashlightOn;
-uniform float flashlightCutOff;      // coseno del angulo interior del cono
-uniform float flashlightOuterCutOff; // coseno del angulo exterior del cono
+uniform float flashlightCutOff;
+uniform float flashlightOuterCutOff;
+uniform float flashlightFlicker; // 0..1, simula bateria vieja fallando
 
-// Luz roja ambiental que palpita (modo terror sin linterna)
+// Glow rojo de fondo (siempre presente, tenue, palpita)
 uniform vec3 redLightColor;
 uniform float redLightIntensity;
+
+// Niebla: come la visibilidad lejana
+uniform vec3 fogColor;
+uniform float fogDensity;
+
+// Vinieta: oscurece los bordes de pantalla
+uniform vec2 screenSize;
 
 void main()
 {
     vec3 texColor = texture(texture_diffuse1, TexCoords).rgb;
     vec3 norm = normalize(Normal);
 
-    // Ambiente muy bajo para que nunca quede 100% negro (mantiene la sensacion
-    // de oscuridad pero sin perder la silueta de los objetos)
-    vec3 ambient = 0.03 * texColor;
+    // Ambiente casi nulo: la escena depende casi por completo de la linterna
+    vec3 ambient = 0.02 * texColor;
     vec3 result = ambient;
 
-    if (flashlightOn)
-    {
-        vec3 lightDir = normalize(viewPos - FragPos);
-        float diff = max(dot(norm, lightDir), 0.0);
+    // --- Linterna con parpadeo ---
+    vec3 lightDir = normalize(viewPos - FragPos);
+    float diff = max(dot(norm, lightDir), 0.0);
 
-        float theta = dot(lightDir, normalize(-flashlightDir));
-        float epsilon = flashlightCutOff - flashlightOuterCutOff;
-        float spotIntensity = clamp((theta - flashlightOuterCutOff) / epsilon, 0.0, 1.0);
+    float theta = dot(lightDir, normalize(-flashlightDir));
+    float epsilon = flashlightCutOff - flashlightOuterCutOff;
+    float spotIntensity = clamp((theta - flashlightOuterCutOff) / epsilon, 0.0, 1.0);
 
-        float distance = length(viewPos - FragPos);
-        float attenuation = 1.0 / (1.0 + 0.09 * distance + 0.032 * distance * distance);
+    float distance = length(viewPos - FragPos);
+    float attenuation = 1.0 / (1.0 + 0.09 * distance + 0.032 * distance * distance);
 
-        vec3 diffuse = diff * texColor * attenuation * spotIntensity;
-        result += diffuse * 1.8; // linterna con punch para que se note en la oscuridad
-    }
-    else
-    {
-        // Luz roja sin direccion fija (glow ambiental), pulsando en intensidad
-        float ndotUp = max(dot(norm, vec3(0.0, 1.0, 0.0)), 0.15);
-        vec3 redGlow = redLightColor * redLightIntensity * texColor * ndotUp;
-        result += redGlow;
-    }
+    vec3 flashlightContribution = diff * texColor * attenuation * spotIntensity * flashlightFlicker * 1.8;
+    result += flashlightContribution;
+
+    // --- Glow rojo de fondo (siempre presente, no depende de la linterna) ---
+    float ndotUp = max(dot(norm, vec3(0.0, 1.0, 0.0)), 0.1);
+    vec3 redGlow = redLightColor * redLightIntensity * texColor * ndotUp;
+    result += redGlow;
+
+    // --- Niebla: mientras mas lejos, mas se funde a negro/rojizo ---
+    float fogFactor = 1.0 - exp(-fogDensity * distance * distance);
+    fogFactor = clamp(fogFactor, 0.0, 1.0);
+    result = mix(result, fogColor, fogFactor);
+
+    // --- Vinieta ---
+    vec2 uv = gl_FragCoord.xy / screenSize;
+    float vig = smoothstep(0.9, 0.35, length(uv - vec2(0.5)));
+    result *= mix(0.3, 1.0, vig);
 
     FragColor = vec4(result, 1.0);
 }

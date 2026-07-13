@@ -89,17 +89,29 @@ const float FLOOR_MASK_MAX_ELEVATION = 0.5f;
 const float GRID_SAFETY_MARGIN = 8.0f;
 
 // -----------------------------------------------------------
-// Iluminacion de terror: linterna (spotlight que sigue la camara) o,
-// en su lugar, una luz roja tenue que palpita como un latido. Se
-// alternan con la tecla F. Arranca con la linterna encendida.
+// Iluminacion de terror: linterna SIEMPRE encendida (con parpadeo de
+// bateria vieja) + un glow rojo de fondo siempre presente y tenue +
+// niebla que come la visibilidad lejana + vineta en los bordes.
+// Todo combinado a la vez, no es un modo que se elige.
 // -----------------------------------------------------------
 const float FLASHLIGHT_INNER_CUTOFF_DEG = 12.5f;
 const float FLASHLIGHT_OUTER_CUTOFF_DEG = 20.0f;
 
+// Parpadeo de linterna: cada FLICKER_STEP_DURATION segundos se decide un
+// nuevo nivel de intensidad. La mayoria de las veces es sutil (0.75-1.0);
+// ocasionalmente hay un "corte" fuerte simulando mal contacto de bateria.
+const float FLICKER_STEP_DURATION = 0.18f;
+const float FLICKER_DIP_CHANCE = 0.10f;   // probabilidad de corte fuerte por paso
+const float FLICKER_DIP_MIN = 0.08f;      // que tan oscuro llega a quedar en un corte
+
 const glm::vec3 RED_LIGHT_COLOR = glm::vec3(1.0f, 0.05f, 0.05f);
-const float RED_LIGHT_BASE_INTENSITY = 0.12f;  // nivel "de reposo" del palpitar
-const float RED_LIGHT_PULSE_AMOUNT = 0.10f;    // cuanto sube en cada latido
-const float RED_LIGHT_PULSE_SPEED = 1.6f;      // velocidad del palpitar (mas alto = mas rapido)
+const float RED_LIGHT_BASE_INTENSITY = 0.07f;  // tenue, es ambientacion, no iluminacion principal
+const float RED_LIGHT_PULSE_AMOUNT = 0.05f;
+const float RED_LIGHT_PULSE_SPEED = 1.6f;      // velocidad del "latido"
+
+// Niebla: cuanto mas alto FOG_DENSITY, antes se pierde la visibilidad
+const glm::vec3 FOG_COLOR = glm::vec3(0.03f, 0.01f, 0.01f); // negro con tinte rojizo
+const float FOG_DENSITY = 0.0035f;
 
 // Indices de malla a excluir por completo de la colision (por ejemplo
 // una lampara colgante, cables, o el "shell" exterior/techo si genera
@@ -120,8 +132,11 @@ bool firstMouse = true;
 float deltaTime = 0.0f;
 float lastFrame = 0.0f;
 
-// Estado de iluminacion: true = linterna encendida, false = luz roja pulsante
-bool g_flashlightOn = true;
+// Pseudo-random determinista basado en un valor (para el parpadeo de la linterna)
+float PseudoRandom01(float seed)
+{
+    return glm::fract(sinf(seed * 12.9898f) * 43758.5453f);
+}
 
 // ---------------------------------------------------------
 // AABB simple (solo se usa para medir el modelo, ya no para colisionar)
@@ -492,18 +507,38 @@ int main()
         ourShader.setMat4("view", view);
         ourShader.setMat4("model", warehouseModelMatrix);
 
-        // -------- Iluminacion de terror --------
+        // -------- Iluminacion de terror (siempre combinada) --------
         ourShader.setVec3("viewPos", camera.Position);
         ourShader.setVec3("flashlightDir", camera.Front);
-        ourShader.setBool("flashlightOn", g_flashlightOn);
         ourShader.setFloat("flashlightCutOff", cosf(glm::radians(FLASHLIGHT_INNER_CUTOFF_DEG)));
         ourShader.setFloat("flashlightOuterCutOff", cosf(glm::radians(FLASHLIGHT_OUTER_CUTOFF_DEG)));
 
-        // Palpitar tipo latido: oscila entre BASE y BASE+PULSE con el tiempo
+        // Parpadeo de bateria: se recalcula cada FLICKER_STEP_DURATION segundos,
+        // no cada frame, para que se sienta como pasos de parpadeo y no un ruido continuo.
+        float flickerStep = floorf(currentFrame / FLICKER_STEP_DURATION);
+        float flickerRoll = PseudoRandom01(flickerStep);
+        float flashlightFlicker;
+        if (flickerRoll < FLICKER_DIP_CHANCE)
+        {
+            float dipAmount = PseudoRandom01(flickerStep * 7.31f);
+            flashlightFlicker = FLICKER_DIP_MIN + dipAmount * 0.15f;
+        }
+        else
+        {
+            flashlightFlicker = 0.8f + PseudoRandom01(flickerStep * 3.17f) * 0.2f;
+        }
+        ourShader.setFloat("flashlightFlicker", flashlightFlicker);
+
+        // Palpitar tipo latido para el glow rojo de fondo
         float pulse = RED_LIGHT_BASE_INTENSITY + RED_LIGHT_PULSE_AMOUNT *
             (0.5f + 0.5f * sinf(currentFrame * RED_LIGHT_PULSE_SPEED));
         ourShader.setVec3("redLightColor", RED_LIGHT_COLOR);
         ourShader.setFloat("redLightIntensity", pulse);
+
+        // Niebla y vineta
+        ourShader.setVec3("fogColor", FOG_COLOR);
+        ourShader.setFloat("fogDensity", FOG_DENSITY);
+        ourShader.setVec2("screenSize", glm::vec2((float)SCR_WIDTH, (float)SCR_HEIGHT));
 
         ourModel.Draw(ourShader);
 
@@ -535,22 +570,6 @@ void processInput(GLFWwindow* window)
     else
     {
         f1WasPressed = false;
-    }
-
-    // Tecla F: alterna entre linterna y luz roja pulsante
-    static bool fWasPressed = false;
-    if (glfwGetKey(window, GLFW_KEY_F) == GLFW_PRESS)
-    {
-        if (!fWasPressed)
-        {
-            g_flashlightOn = !g_flashlightOn;
-            std::cout << "[DEBUG] Linterna " << (g_flashlightOn ? "ENCENDIDA" : "APAGADA (luz roja activa)") << std::endl;
-        }
-        fWasPressed = true;
-    }
-    else
-    {
-        fWasPressed = false;
     }
 
     float velocity = camera.MovementSpeed * deltaTime;
