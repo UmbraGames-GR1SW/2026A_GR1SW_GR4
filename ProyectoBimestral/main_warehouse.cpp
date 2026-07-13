@@ -105,13 +105,27 @@ const float FLICKER_DIP_CHANCE = 0.10f;   // probabilidad de corte fuerte por pa
 const float FLICKER_DIP_MIN = 0.08f;      // que tan oscuro llega a quedar en un corte
 
 const glm::vec3 RED_LIGHT_COLOR = glm::vec3(1.0f, 0.05f, 0.05f);
-const float RED_LIGHT_BASE_INTENSITY = 0.07f;  // tenue, es ambientacion, no iluminacion principal
-const float RED_LIGHT_PULSE_AMOUNT = 0.05f;
+const float RED_LIGHT_BASE_INTENSITY = 0.9f;  // intensidad de cada foco individual (ya no es un glow global)
+const float RED_LIGHT_PULSE_AMOUNT = 0.5f;
 const float RED_LIGHT_PULSE_SPEED = 1.6f;      // velocidad del "latido"
 
-// Niebla: cuanto mas alto FOG_DENSITY, antes se pierde la visibilidad
+// Niebla: cuanto mas alto FOG_DENSITY, antes se pierde la visibilidad.
+// Subida un poco a pedido: ahora se pierde visibilidad algo antes.
 const glm::vec3 FOG_COLOR = glm::vec3(0.03f, 0.01f, 0.01f); // negro con tinte rojizo
-const float FOG_DENSITY = 0.0035f;
+const float FOG_DENSITY = 0.006f;
+
+// -----------------------------------------------------------
+// Focos de techo: la luz roja ahora sale de puntos reales del modelo
+// (los focos/lamparas colgadas del techo) en vez de ser un glow parejo.
+// Se detectan automaticamente: mallas chicas ubicadas cerca del techo.
+// Si la deteccion automatica falla, llenar manualLightMeshIndices con
+// los indices reales (mirando el listado [MESH i] de la consola) y
+// esos van a tener prioridad sobre la deteccion automatica.
+// -----------------------------------------------------------
+const float CEILING_LIGHT_MAX_FOOTPRINT = 3.0f;      // ancho/profundidad maxima para contar como "foco"
+const float CEILING_LIGHT_MIN_ELEVATION_FRAC = 0.75f; // debe estar en el 25% superior del edificio
+const int   MAX_RED_LIGHTS = 8;
+std::vector<int> manualLightMeshIndices = { };
 
 // Indices de malla a excluir por completo de la colision (por ejemplo
 // una lampara colgante, cables, o el "shell" exterior/techo si genera
@@ -186,6 +200,10 @@ struct CollisionGrid {
 CollisionGrid g_grid;      // 1 = bloqueado (pared, columna, silla, etc.)
 CollisionGrid g_floorMask; // 1 = hay piso real debajo
 
+std::vector<glm::vec3> g_meshCenters;         // centro (mundo) de cada malla, indexado igual que model.meshes
+std::vector<int> g_autoDetectedLightIndices;  // indices de mallas candidatas a "foco de techo"
+std::vector<glm::vec3> g_redLightPositions;   // posiciones finales usadas por el shader
+
 // -----------------------------------------------------------
 // Construye la grilla de colision recorriendo TODOS los triangulos
 // del modelo. Un triangulo solo aporta colision si su rango de
@@ -241,12 +259,31 @@ void BuildCollisionGrid(Model& model, const glm::mat4& modelMatrix, const AABB& 
             (elevationAboveFloor > -0.05f) &&
             (elevationAboveFloor < FLOOR_CLUTTER_MAX_ELEVATION);
 
+        // Centro de la malla en mundo (se guarda siempre, sirve tanto para
+        // deteccion automatica de focos como para overrides manuales).
+        glm::vec3 meshCenter = (meshMin + meshMax) * 0.5f;
+        g_meshCenters.push_back(meshCenter);
+
+        // Candidato a "foco de techo": chico y ubicado en el 25% superior
+        // del edificio. No se excluye de colision/piso por esto, solo se
+        // usa para decidir de donde sale la luz roja.
+        float elevationFrac = (worldBounds.max.y > worldBounds.min.y)
+            ? (meshCenter.y - floorY) / (worldBounds.max.y - floorY)
+            : 0.0f;
+        float footprint = std::max(meshMax.x - meshMin.x, meshMax.z - meshMin.z);
+        bool isCeilingLightCandidate = !excludedManually &&
+            footprint < CEILING_LIGHT_MAX_FOOTPRINT &&
+            elevationFrac > CEILING_LIGHT_MIN_ELEVATION_FRAC;
+        if (isCeilingLightCandidate)
+            g_autoDetectedLightIndices.push_back((int)m);
+
         if (PRINT_MESH_DEBUG)
         {
             std::cout << "  [MESH " << m << "] verts=" << verts.size()
                 << " size=(" << (meshMax.x - meshMin.x) << ", " << meshHeight << ", " << (meshMax.z - meshMin.z) << ")"
                 << " elevacion=" << elevationAboveFloor
                 << (isFloorClutter ? "  -> BASURA DE PISO (excluida auto)" : "")
+                << (isCeilingLightCandidate ? "  -> CANDIDATO A FOCO DE TECHO" : "")
                 << (excludedManually ? "  -> EXCLUIDA manualmente" : "")
                 << std::endl;
         }
@@ -307,6 +344,43 @@ void BuildCollisionGrid(Model& model, const glm::mat4& modelMatrix, const AABB& 
         << " | usados para colision: " << trianglesUsed << std::endl;
     std::cout << "[DEBUG] Celdas solidas: " << solidCells << " / " << g_grid.solid.size() << std::endl;
     std::cout << "[DEBUG] Celdas con piso: " << floorCells << " / " << g_floorMask.solid.size() << std::endl;
+
+    // -------------------- Posiciones finales de las luces rojas --------------------
+    g_redLightPositions.clear();
+    if (!manualLightMeshIndices.empty())
+    {
+        for (int idx : manualLightMeshIndices)
+        {
+            if (idx >= 0 && idx < (int)g_meshCenters.size())
+                g_redLightPositions.push_back(g_meshCenters[idx]);
+        }
+        std::cout << "[DEBUG] Usando " << g_redLightPositions.size() << " foco(s) definidos manualmente en manualLightMeshIndices." << std::endl;
+    }
+    else
+    {
+        for (int idx : g_autoDetectedLightIndices)
+        {
+            if ((int)g_redLightPositions.size() >= MAX_RED_LIGHTS) break;
+            g_redLightPositions.push_back(g_meshCenters[idx]);
+        }
+        std::cout << "[DEBUG] " << g_autoDetectedLightIndices.size() << " candidato(s) a foco de techo detectados automaticamente, usando "
+            << g_redLightPositions.size() << "." << std::endl;
+    }
+
+    // Respaldo: si no se detecto ni configuro ningun foco, usamos un
+    // punto por defecto en el centro del techo para no quedarnos sin luz roja.
+    if (g_redLightPositions.empty())
+    {
+        glm::vec3 fallback((worldBounds.min.x + worldBounds.max.x) * 0.5f,
+            worldBounds.max.y - 0.3f,
+            (worldBounds.min.z + worldBounds.max.z) * 0.5f);
+        g_redLightPositions.push_back(fallback);
+        std::cout << "[DEBUG] No se detecto ningun foco de techo: usando 1 punto de respaldo en el centro del techo." << std::endl;
+    }
+
+    for (size_t i = 0; i < g_redLightPositions.size(); i++)
+        std::cout << "  [LUZ ROJA " << i << "] pos=(" << g_redLightPositions[i].x << ", "
+        << g_redLightPositions[i].y << ", " << g_redLightPositions[i].z << ")" << std::endl;
 }
 
 // Hay piso pisable en esta posicion? (usa el centro del jugador, no el
@@ -529,11 +603,14 @@ int main()
         }
         ourShader.setFloat("flashlightFlicker", flashlightFlicker);
 
-        // Palpitar tipo latido para el glow rojo de fondo
+        // Palpitar tipo latido para las luces rojas del techo
         float pulse = RED_LIGHT_BASE_INTENSITY + RED_LIGHT_PULSE_AMOUNT *
             (0.5f + 0.5f * sinf(currentFrame * RED_LIGHT_PULSE_SPEED));
         ourShader.setVec3("redLightColor", RED_LIGHT_COLOR);
         ourShader.setFloat("redLightIntensity", pulse);
+        ourShader.setInt("numRedLights", (int)g_redLightPositions.size());
+        for (size_t i = 0; i < g_redLightPositions.size(); i++)
+            ourShader.setVec3("redLightPositions[" + std::to_string(i) + "]", g_redLightPositions[i]);
 
         // Niebla y vineta
         ourShader.setVec3("fogColor", FOG_COLOR);
