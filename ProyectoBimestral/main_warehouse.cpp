@@ -104,15 +104,28 @@ const float FLICKER_STEP_DURATION = 0.18f;
 const float FLICKER_DIP_CHANCE = 0.10f;   // probabilidad de corte fuerte por paso
 const float FLICKER_DIP_MIN = 0.08f;      // que tan oscuro llega a quedar en un corte
 
+// -----------------------------------------------------------
+// Apagon real: cada tanto la linterna se va a negro por completo
+// durante un ratito, distinto del parpadeo rapido de arriba (que es
+// un temblor sutil constante). Esto es "la bateria fallo en serio".
+// El proximo apagon se sortea dentro de [MIN_INTERVAL, MAX_INTERVAL]
+// segundos despues del anterior, y dura entre [MIN_DURATION, MAX_DURATION].
+// -----------------------------------------------------------
+const float BLACKOUT_MIN_INTERVAL = 12.0f;
+const float BLACKOUT_MAX_INTERVAL = 28.0f;
+const float BLACKOUT_MIN_DURATION = 1.0f;
+const float BLACKOUT_MAX_DURATION = 3.0f;
+
 const glm::vec3 RED_LIGHT_COLOR = glm::vec3(1.0f, 0.05f, 0.05f);
 const float RED_LIGHT_BASE_INTENSITY = 0.9f;  // intensidad de cada foco individual (ya no es un glow global)
 const float RED_LIGHT_PULSE_AMOUNT = 0.5f;
 const float RED_LIGHT_PULSE_SPEED = 1.6f;      // velocidad del "latido"
 
 // Niebla: cuanto mas alto FOG_DENSITY, antes se pierde la visibilidad.
-// Subida un poco a pedido: ahora se pierde visibilidad algo antes.
+// Subida de nuevo a pedido para que el fondo se pierda mas rapido
+// (por como funciona la formula, lo cercano casi no se ve afectado).
 const glm::vec3 FOG_COLOR = glm::vec3(0.03f, 0.01f, 0.01f); // negro con tinte rojizo
-const float FOG_DENSITY = 0.006f;
+const float FOG_DENSITY = 0.009f;
 
 // -----------------------------------------------------------
 // Focos de techo: la luz roja ahora sale de puntos reales del modelo
@@ -146,10 +159,22 @@ bool firstMouse = true;
 float deltaTime = 0.0f;
 float lastFrame = 0.0f;
 
+// Estado del apagon real de la linterna
+bool g_inBlackout = false;
+float g_nextBlackoutTime = -1.0f; // se inicializa la primera vez que se usa
+float g_blackoutEndTime = 0.0f;
+
 // Pseudo-random determinista basado en un valor (para el parpadeo de la linterna)
 float PseudoRandom01(float seed)
 {
     return glm::fract(sinf(seed * 12.9898f) * 43758.5453f);
+}
+
+// Pseudo-random en un rango [minVal, maxVal], variando la semilla para no
+// repetir siempre el mismo numero cuando se llama varias veces seguidas.
+float PseudoRandomRange(float seed, float minVal, float maxVal)
+{
+    return minVal + PseudoRandom01(seed) * (maxVal - minVal);
 }
 
 // ---------------------------------------------------------
@@ -587,6 +612,26 @@ int main()
         ourShader.setFloat("flashlightCutOff", cosf(glm::radians(FLASHLIGHT_INNER_CUTOFF_DEG)));
         ourShader.setFloat("flashlightOuterCutOff", cosf(glm::radians(FLASHLIGHT_OUTER_CUTOFF_DEG)));
 
+        // Apagon real: cada tanto la linterna se corta por completo un ratito.
+        // Se maneja con un pequeno estado: si no hay apagon programado, se
+        // sortea el proximo; si llega la hora, entra en apagon por una
+        // duracion tambien sorteada; al terminar, se programa el siguiente.
+        if (g_nextBlackoutTime < 0.0f)
+            g_nextBlackoutTime = currentFrame + PseudoRandomRange(1.0f, BLACKOUT_MIN_INTERVAL, BLACKOUT_MAX_INTERVAL);
+
+        if (!g_inBlackout && currentFrame >= g_nextBlackoutTime)
+        {
+            g_inBlackout = true;
+            g_blackoutEndTime = currentFrame + PseudoRandomRange(currentFrame, BLACKOUT_MIN_DURATION, BLACKOUT_MAX_DURATION);
+            std::cout << "[DEBUG] Apagon de linterna iniciado." << std::endl;
+        }
+        else if (g_inBlackout && currentFrame >= g_blackoutEndTime)
+        {
+            g_inBlackout = false;
+            g_nextBlackoutTime = currentFrame + PseudoRandomRange(currentFrame * 1.37f, BLACKOUT_MIN_INTERVAL, BLACKOUT_MAX_INTERVAL);
+            std::cout << "[DEBUG] Linterna volvio." << std::endl;
+        }
+
         // Parpadeo de bateria: se recalcula cada FLICKER_STEP_DURATION segundos,
         // no cada frame, para que se sienta como pasos de parpadeo y no un ruido continuo.
         float flickerStep = floorf(currentFrame / FLICKER_STEP_DURATION);
@@ -601,6 +646,12 @@ int main()
         {
             flashlightFlicker = 0.8f + PseudoRandom01(flickerStep * 3.17f) * 0.2f;
         }
+
+        // El apagon real pisa al parpadeo sutil: mientras dura, la linterna
+        // no se recupera aunque el parpadeo "quisiera" subir.
+        if (g_inBlackout)
+            flashlightFlicker = 0.0f;
+
         ourShader.setFloat("flashlightFlicker", flashlightFlicker);
 
         // Palpitar tipo latido para las luces rojas del techo
