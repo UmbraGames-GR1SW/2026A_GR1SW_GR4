@@ -385,3 +385,6 @@ Release/
 *.jpg
 *.tga
 *.bmp
+
+#Excepción: permitir todos los assets del proyecto
+!ProyectoBimestral/model/**
