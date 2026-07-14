@@ -29,7 +29,8 @@ namespace Pasillo {
         INTRO_FADE_IN_GAME,// El negro se desvanece revelando el pasillo
         INTRO_DONE         // El juego empieza normal
     };
-    static IntroPhase introPhase = INTRO_WAIT_BLACK;
+    static IntroPhase introPhase = INTRO_DONE; // Inicializado en DONE para saltar la intro si ya se vio
+    static bool firstTimeEver = true;         // Variable persistente
     static float introTimer = 0.0f;
     static bool enterPressedLastFrame = false;
 
@@ -199,9 +200,17 @@ namespace Pasillo {
         SCR_HEIGHT = height;
 
         // Reiniciar variables para cuando se regrese a esta escena
-        introPhase = INTRO_WAIT_BLACK;
-        introTimer = static_cast<float>(glfwGetTime());
         enterPressedLastFrame = false;
+
+        // Lógica de primera vez: solo inicializa la intro si es el primer arranque del programa
+        if (firstTimeEver) {
+            introPhase = INTRO_WAIT_BLACK;
+            introTimer = static_cast<float>(glfwGetTime());
+            firstTimeEver = false;
+        }
+        else {
+            introPhase = INTRO_DONE;
+        }
 
         // Shaders
         Shader ourShader("shaders/Vertex_Samy.vs", "shaders/Fragment_Samy.fs");
