@@ -351,6 +351,9 @@ Release/
 *.tga
 *.bmp
 
+# Ignorar todos los .zip en modelos
+ProyectoBimestral/model/**/*.zip
+
 # PERMITIR todos los modelos y texturas dentro de ProyectoBimestral/model/
 !ProyectoBimestral/model/**/*.obj
 !ProyectoBimestral/model/**/*.mtl
