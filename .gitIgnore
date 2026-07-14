@@ -386,5 +386,6 @@ Release/
 *.tga
 *.bmp
 
-#Excepción: permitir todos los assets del proyecto
-!ProyectoBimestral/model/**
+# Permitir todos los modelos y texturas dentro de la carpeta model/
+!/ProyectoBimestral/model/**
+!/ProyectoBimestral/model/**/
