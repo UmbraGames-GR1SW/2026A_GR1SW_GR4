@@ -426,6 +426,11 @@ namespace Warehouse {
     static const float RED_LIGHT_OFF_DURATION_MAX = 18.0f; // cuanto dura el apagon (max)
     static std::vector<bool> g_redLightWasOff;
 
+    enum ExitPhase { EXIT_NONE, EXIT_WAIT_BLACK, EXIT_FADE_IN, EXIT_SHOW, EXIT_FADE_OUT };
+    static ExitPhase exitPhase = EXIT_NONE;
+    static float exitTimer = 0.0f;
+    static const std::string MATT_MESSAGE_IMAGE_PATH = "./model/Warehouse/abandoned_warehouse_-_interior_scene/message_matt.jpeg";
+
     // Pseudo-random determinista basado en un valor (para el parpadeo de la linterna)
     float PseudoRandom01(float seed)
     {
@@ -841,6 +846,8 @@ namespace Warehouse {
         g_nextPresenceSoundTime = -1.0f;
         g_pursuerLungeTimer = 0.0f;
         g_pursuerRetreatUntil = -1000.0f;
+        exitPhase = EXIT_NONE;
+        exitTimer = 0.0f;
 
         int width, height;
         glfwGetFramebufferSize(window, &width, &height);
@@ -884,6 +891,7 @@ namespace Warehouse {
         // -------------------- Jumpscare: shader, textura e imagen a pantalla completa --------------------
         Shader jumpscareShader("shaders/jumpscare.vs", "shaders/jumpscare.fs");
         unsigned int jumpscareTex = LoadTexture2D(JUMPSCARE_IMAGE_PATH);
+        unsigned int mattMessageTex = LoadTexture2D(MATT_MESSAGE_IMAGE_PATH);
 
         float jumpscareQuad[] = {
             // pos          // uv
@@ -1363,6 +1371,74 @@ namespace Warehouse {
             if (deltaTime > 0.1f) deltaTime = 0.1f;
 
             processInput(window);
+
+            // Si estamos en la secuencia de salida, saltamos la lógica y renderizado normal 3D
+            if (exitPhase != EXIT_NONE)
+            {
+                glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
+                glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+
+                glDisable(GL_DEPTH_TEST);
+                jumpscareShader.use();
+                jumpscareShader.setInt("jumpscareTex", 0);
+
+                float fadeValue = 0.0f;
+                float fadeDuration = 2.5f;
+
+                if (exitPhase == EXIT_WAIT_BLACK)
+                {
+                    if (currentFrame - exitTimer >= 2.0f) { // 2 Segundos en negro
+                        exitPhase = EXIT_FADE_IN;
+                        exitTimer = currentFrame;
+                    }
+                }
+                else if (exitPhase == EXIT_FADE_IN)
+                {
+                    float progress = (currentFrame - exitTimer) / fadeDuration;
+                    fadeValue = glm::clamp(progress, 0.0f, 1.0f);
+                    if (progress >= 1.0f) {
+                        exitPhase = EXIT_SHOW;
+                        exitTimer = currentFrame;
+                    }
+                }
+                else if (exitPhase == EXIT_SHOW)
+                {
+                    fadeValue = 1.0f;
+                    if (currentFrame - exitTimer >= 10.0f) { // Mostrar 10 segundos
+                        exitPhase = EXIT_FADE_OUT;
+                        exitTimer = currentFrame;
+                    }
+                }
+                else if (exitPhase == EXIT_FADE_OUT)
+                {
+                    float progress = (currentFrame - exitTimer) / fadeDuration;
+                    fadeValue = 1.0f - glm::clamp(progress, 0.0f, 1.0f);
+                    if (progress >= 1.0f) {
+                        if (g_UnlockedLevel < 4) {
+                            g_UnlockedLevel = 4;
+                        }
+                        g_NextScene = SCENE_PASILLO; // Regresar al Pasillo
+                    }
+                }
+
+                glEnable(GL_BLEND);
+                glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+
+                jumpscareShader.setFloat("alpha", fadeValue);
+                jumpscareShader.setFloat("blackOverride", 0.0f);
+                glActiveTexture(GL_TEXTURE0);
+                glBindTexture(GL_TEXTURE_2D, mattMessageTex);
+
+                glBindVertexArray(jumpscareVAO);
+                glDrawArrays(GL_TRIANGLES, 0, 6);
+                glBindVertexArray(0);
+
+                glDisable(GL_BLEND);
+
+                glfwSwapBuffers(window);
+                glfwPollEvents();
+                continue; // Saltar el resto del bucle normal de renderizado
+            }
 
             // Reseteo del estado activo del jumpscare cuando termina su ventana de efecto
             if (g_jumpscareActive && currentFrame >= g_jumpscareActiveEndTime)
@@ -1940,6 +2016,7 @@ namespace Warehouse {
         glDeleteVertexArrays(1, &jumpscareVAO);
         glDeleteBuffers(1, &jumpscareVBO);
         glDeleteTextures(1, &jumpscareTex);
+        glDeleteTextures(1, &mattMessageTex);
     }
 
     void processInput(GLFWwindow* window)
@@ -1947,13 +2024,21 @@ namespace Warehouse {
         if (glfwGetKey(window, GLFW_KEY_ESCAPE) == GLFW_PRESS)
             glfwSetWindowShouldClose(window, true);
 
+        // --- BLOQUEO DE CONTROLES SI SE ESTÁ MOSTRANDO LA SALIDA CINEMÁTICA ---
+        if (exitPhase != EXIT_NONE) {
+            return;
+        }
+
         // Volver al Pasillo
         if (glfwGetKey(window, GLFW_KEY_H) == GLFW_PRESS)
         {
-            if (g_UnlockedLevel < 4) {
-                g_UnlockedLevel = 4;
+            if (exitPhase == EXIT_NONE) {
+                exitPhase = EXIT_WAIT_BLACK;
+                exitTimer = static_cast<float>(glfwGetTime());
+                haltmusic();
+                haltsound();
             }
-            g_NextScene = SCENE_PASILLO;
+            return;
         }
 
         static bool f1WasPressed = false;
@@ -2007,11 +2092,15 @@ namespace Warehouse {
         lastX = xpos;
         lastY = ypos;
 
-        camera.ProcessMouseMovement(xoffset, yoffset);
+        if (!g_jumpscareActive && exitPhase == EXIT_NONE) {
+            camera.ProcessMouseMovement(xoffset, yoffset);
+        }
     }
 
     void scroll_callback(GLFWwindow* window, double xoffset, double yoffset)
     {
-        camera.ProcessMouseScroll(static_cast<float>(yoffset));
+        if (exitPhase == EXIT_NONE) {
+            camera.ProcessMouseScroll(static_cast<float>(yoffset));
+        }
     }
 }

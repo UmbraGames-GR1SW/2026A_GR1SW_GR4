@@ -28,7 +28,10 @@ namespace Pasillo {
         END_WAIT_1S,        // Espera de 1 segundo en el pasillo antes de mostrar ending_choose
         END_FADE_IN_2,      // Aparece lentamente la imagen de ending_choose
         END_WAIT_CHOICE,    // Muestra ending_choose esperando Y/N
-        END_ACCEPTED,       // Si elige Y (Acepta destino) -> Reproduce video y cierra
+        END_ACCEPTED_WAIT_BLACK, // Espera de 2 segundos en negro antes del fade-in
+        END_ACCEPTED_FADE_IN,    // Se desvanece a la imagen de gamebucle
+        END_ACCEPTED_SHOW,       // Muestra la imagen de gamebucle por 10 segundos
+        END_ACCEPTED_FADE_OUT,   // Se desvanece la imagen a negro y luego cierra el programa
         END_REJECTED        // Si elige N (No acepta) -> Muestra gamebucle y espera ENTER
     };
     static HallwayEndingState hallwayEndingState = END_NONE;
@@ -151,7 +154,7 @@ namespace Pasillo {
         if (hallwayEndingState != END_NONE) {
             if (hallwayEndingState == END_WAIT_CHOICE) {
                 if (glfwGetKey(window, GLFW_KEY_Y) == GLFW_PRESS) {
-                    hallwayEndingState = END_ACCEPTED;
+                    hallwayEndingState = END_ACCEPTED_WAIT_BLACK;
                     hallwayEndingTimer = static_cast<float>(glfwGetTime());
                 }
                 else if (glfwGetKey(window, GLFW_KEY_N) == GLFW_PRESS) {
@@ -166,6 +169,7 @@ namespace Pasillo {
                     firstMouse = true;
                     hallwayEndingState = END_NONE;
                     introPhase = INTRO_DONE;
+                    g_UnlockedLevel = 1; // Volver a bloquear las escenas como al inicio
                 }
             }
             return;
@@ -302,6 +306,7 @@ namespace Pasillo {
         unsigned int introTexture2 = loadTexture("./model/pasillo/intro_message_2.png");
         unsigned int endingChooseTexture = loadTexture("./model/exit/ending_choose.png");
         unsigned int gamebucleTexture = loadTexture("./model/exit/gamebucle.png");
+        unsigned int gameoverTexture = loadTexture("./model/exit/gameover.png");
 
         float quadVertices[] = {
             // Posiciones   // Texturas
@@ -377,12 +382,12 @@ namespace Pasillo {
                 glBindVertexArray(quadVAO);
 
                 float fadeValue = 0.0f;
-                float fadeDuration = 2.0f;
+                float fadeDuration = 2.5f; // Duración igual a la escena de Samy (2.5s)
                 unsigned int activeTex = endingChooseTexture;
 
                 if (hallwayEndingState == END_FADE_IN_2)
                 {
-                    float progress = (currentFrame - hallwayEndingTimer) / fadeDuration;
+                    float progress = (currentFrame - hallwayEndingTimer) / 2.0f; // Mantener duración original para ending_choose (2.0s)
                     fadeValue = glm::clamp(progress, 0.0f, 1.0f);
                     if (progress >= 1.0f) {
                         hallwayEndingState = END_WAIT_CHOICE;
@@ -393,12 +398,42 @@ namespace Pasillo {
                     fadeValue = 1.0f;
                     activeTex = endingChooseTexture;
                 }
-                else if (hallwayEndingState == END_ACCEPTED)
+                else if (hallwayEndingState == END_ACCEPTED_WAIT_BLACK)
                 {
-                    // Acepta su destino -> Reproduce video de gameover y termina
-                    system("start \"\" \"model/exit/gameover.mp4\"");
-                    glfwSetWindowShouldClose(window, true);
                     fadeValue = 0.0f;
+                    activeTex = gameoverTexture;
+                    if (currentFrame - hallwayEndingTimer >= 2.0f) { // 2s en negro igual que Samy
+                        hallwayEndingState = END_ACCEPTED_FADE_IN;
+                        hallwayEndingTimer = currentFrame;
+                    }
+                }
+                else if (hallwayEndingState == END_ACCEPTED_FADE_IN)
+                {
+                    activeTex = gameoverTexture;
+                    float progress = (currentFrame - hallwayEndingTimer) / fadeDuration;
+                    fadeValue = glm::clamp(progress, 0.0f, 1.0f);
+                    if (progress >= 1.0f) {
+                        hallwayEndingState = END_ACCEPTED_SHOW;
+                        hallwayEndingTimer = currentFrame;
+                    }
+                }
+                else if (hallwayEndingState == END_ACCEPTED_SHOW)
+                {
+                    fadeValue = 1.0f;
+                    activeTex = gameoverTexture;
+                    if (currentFrame - hallwayEndingTimer >= 10.0f) { // 10s mostrando la imagen igual que Samy
+                        hallwayEndingState = END_ACCEPTED_FADE_OUT;
+                        hallwayEndingTimer = currentFrame;
+                    }
+                }
+                else if (hallwayEndingState == END_ACCEPTED_FADE_OUT)
+                {
+                    activeTex = gameoverTexture;
+                    float progress = (currentFrame - hallwayEndingTimer) / fadeDuration;
+                    fadeValue = 1.0f - glm::clamp(progress, 0.0f, 1.0f);
+                    if (progress >= 1.0f) {
+                        glfwSetWindowShouldClose(window, true);
+                    }
                 }
                 else if (hallwayEndingState == END_REJECTED)
                 {
@@ -411,24 +446,7 @@ namespace Pasillo {
                 glBindTexture(GL_TEXTURE_2D, activeTex);
                 glDrawArrays(GL_TRIANGLES, 0, 6);
 
-                // Renderizar textos explicativos sobre el quad del final si es necesario
-                float sw = static_cast<float>(SCR_WIDTH);
-                float sh = static_cast<float>(SCR_HEIGHT);
-
-                if (hallwayEndingState == END_WAIT_CHOICE)
-                {
-                    // Opcional: mostrar texto explicativo de teclas (para interactuar)
-                    std::string promptText = "Presiona [Y] para ACEPTAR TU DESTINO  /  [N] para NO ACEPTAR";
-                    float wp = GetTextWidth(promptText, 0.4f);
-                    RenderText(textShader, promptText, (sw - wp) / 2.0f, 50.0f, 0.4f, glm::vec3(0.8f, 0.8f, 0.8f), sw, sh);
-                }
-                else if (hallwayEndingState == END_REJECTED)
-                {
-                    // Explicar cómo reiniciar el bucle
-                    std::string promptText = "Presiona ENTER para reiniciar el bucle de recuerdos";
-                    float wp = GetTextWidth(promptText, 0.4f);
-                    RenderText(textShader, promptText, (sw - wp) / 2.0f, 50.0f, 0.4f, glm::vec3(0.8f, 0.8f, 0.8f), sw, sh);
-                }
+                // No programmatic text rendered over the ending screens
 
                 glfwSwapBuffers(window);
                 glfwPollEvents();
