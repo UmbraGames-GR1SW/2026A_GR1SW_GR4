@@ -164,8 +164,8 @@ namespace Warehouse {
     static const float JUMPSCARE_STARE_DURATION = 3.0f;   // segundos mirando fijo para disparar
     static const float JUMPSCARE_STARE_MAX_DISTANCE = 9.0f;
     static const float JUMPSCARE_STARE_FOV_ANGLE_DEG = 12.0f;
-    static const float JUMPSCARE_EFFECT_DURATION = 0.55f; // cuanto dura el golpe (flash+zoom+estrobo)
-    static const float JUMPSCARE_IMAGE_DURATION = 0.75f;  // cuanto dura la imagen en pantalla (attack+hold+release)
+    static const float JUMPSCARE_EFFECT_DURATION = 0.7f; // cuanto dura el golpe (flash+zoom+estrobo+shake)
+    static const float JUMPSCARE_IMAGE_DURATION = 0.85f;  // cuanto dura la imagen en pantalla (negro+estrobo+sostenido+corte)
     static const float JUMPSCARE_COOLDOWN = 22.0f;        // minimo entre sustos
     static const float JUMPSCARE_ZOOM_PUNCH = 24.0f;      // grados de FOV que se suman de golpe
     static const std::string JUMPSCARE_IMAGE_PATH = "./model/exit/scream.jpeg";
@@ -177,9 +177,9 @@ namespace Warehouse {
     // sistema de colision que el jugador. Si te alcanza sin haberlo
     // visto, dispara el mismo jumpscare que la mirada sostenida.
     static const bool  ZOMBIE_APPROACH_ENABLED = true;
-    static const float ZOMBIE_APPROACH_SPEED = 1.0f;             // unidades por segundo
+    static const float ZOMBIE_APPROACH_SPEED = 2.3f;             // rapido: real amenaza si no lo mirás
     static const float ZOMBIE_APPROACH_LOOK_ANGLE_DEG = 25.0f;   // cono generoso: facil "volver a verlo" y congelarlo
-    static const float ZOMBIE_APPROACH_LOOK_MAX_DISTANCE = 16.0f;
+    static const float ZOMBIE_APPROACH_LOOK_MAX_DISTANCE = 40.0f; // cubre casi toda la sala
     static const float ZOMBIE_APPROACH_STOP_DISTANCE = 0.9f;
     static const float ZOMBIE_APPROACH_ATTACK_DISTANCE = 1.1f;   // si llega aca sin ser visto, jumpscare
 
@@ -371,6 +371,15 @@ namespace Warehouse {
     // solo el mas cercano se mueve, y solo despues de pasar el arbol).
     static std::vector<glm::vec2> g_zombieCurrentXZ;
     static std::vector<float> g_zombieMoveYaw;
+
+    // Perseguidor FIJO: una vez elegido, sigue siendo el mismo zombie el
+    // que te persigue durante todo el cruce de la sala (no se recalcula
+    // "el mas cercano" cada frame, porque eso repartia el avance entre
+    // los 4 y ninguno llegaba a ningun lado). -1 = todavia no elegido.
+    static int g_pursuerIndex = -1;
+
+    // Sacudida de camara durante el jumpscare
+    static const float JUMPSCARE_SHAKE_AMOUNT = 0.18f;
 
     // Apagon real por foco: cada luz roja tiene su propio ciclo de
     // encendido/apagado (periodo y duracion del apagon distintos entre si,
@@ -794,6 +803,7 @@ namespace Warehouse {
         g_zombieGazeTimer.clear();
         g_zombieCurrentXZ.clear();
         g_zombieMoveYaw.clear();
+        g_pursuerIndex = -1;
 
         int width, height;
         glfwGetFramebufferSize(window, &width, &height);
@@ -1335,7 +1345,26 @@ namespace Warehouse {
 
             glm::mat4 projection = glm::perspective(glm::radians(camera.Zoom + jumpscareZoomPunch),
                 (float)SCR_WIDTH / (float)SCR_HEIGHT, 0.1f, 500.0f);
-            glm::mat4 view = camera.GetViewMatrix();
+            // Sacudida de camara durante el jumpscare: mucho mas contundente
+            // que un simple flash. Se aplica como offset a la posicion usada
+            // SOLO para la vista de este frame, no afecta camera.Position real.
+            glm::mat4 view;
+            if (g_jumpscareActive)
+            {
+                float shakeProgress = glm::clamp((g_jumpscareActiveEndTime - currentFrame) / JUMPSCARE_EFFECT_DURATION, 0.0f, 1.0f);
+                float shakeMag = JUMPSCARE_SHAKE_AMOUNT * shakeProgress;
+                glm::vec3 shakeOffset(
+                    (PseudoRandom01(currentFrame * 97.3f) - 0.5f) * 2.0f,
+                    (PseudoRandom01(currentFrame * 131.7f + 11.0f) - 0.5f) * 2.0f,
+                    (PseudoRandom01(currentFrame * 61.9f + 23.0f) - 0.5f) * 2.0f
+                );
+                shakeOffset *= shakeMag;
+                view = glm::lookAt(camera.Position + shakeOffset, camera.Position + shakeOffset + camera.Front, camera.Up);
+            }
+            else
+            {
+                view = camera.GetViewMatrix();
+            }
             ourShader.setMat4("projection", projection);
             ourShader.setMat4("view", view);
             ourShader.setMat4("model", warehouseModelMatrix);
@@ -1517,13 +1546,23 @@ namespace Warehouse {
 
                 if (passedTree)
                 {
-                    size_t nearestIdx = 0;
-                    float nearestDist = FLT_MAX;
-                    for (size_t k = 0; k < repeatedInstances.size(); k++)
+                    // Se elige el perseguidor UNA sola vez (el mas cercano en
+                    // ese instante) y se mantiene el mismo de ahi en adelante
+                    // -- asi el avance no se reparte entre los 4 y se siente
+                    // como que ALGUIEN especifico te viene siguiendo.
+                    if (g_pursuerIndex < 0 || g_pursuerIndex >= (int)repeatedInstances.size())
                     {
-                        float d = glm::length(glm::vec2(camera.Position.x, camera.Position.z) - g_zombieCurrentXZ[k]);
-                        if (d < nearestDist) { nearestDist = d; nearestIdx = k; }
+                        size_t nearestIdx = 0;
+                        float nearestDist = FLT_MAX;
+                        for (size_t k = 0; k < repeatedInstances.size(); k++)
+                        {
+                            float d = glm::length(glm::vec2(camera.Position.x, camera.Position.z) - g_zombieCurrentXZ[k]);
+                            if (d < nearestDist) { nearestDist = d; nearestIdx = k; }
+                        }
+                        g_pursuerIndex = (int)nearestIdx;
+                        std::cout << "[DEBUG] Zombie " << g_pursuerIndex << " elegido como perseguidor fijo." << std::endl;
                     }
+                    size_t nearestIdx = (size_t)g_pursuerIndex;
 
                     glm::vec3 approachPos3D(g_zombieCurrentXZ[nearestIdx].x, g_worldAABB.min.y + 0.1f, g_zombieCurrentXZ[nearestIdx].y);
                     glm::vec3 toZ = approachPos3D - camera.Position;
@@ -1718,16 +1757,39 @@ namespace Warehouse {
             float jumpscareElapsed = currentFrame - g_jumpscareTriggerTime;
             if (jumpscareElapsed >= 0.0f && jumpscareElapsed < JUMPSCARE_IMAGE_DURATION)
             {
-                const float ATTACK = 0.06f;
-                const float HOLD = 0.30f;
-                float jumpscareAlpha;
-                if (jumpscareElapsed < ATTACK)
-                    jumpscareAlpha = jumpscareElapsed / ATTACK;
-                else if (jumpscareElapsed < ATTACK + HOLD)
-                    jumpscareAlpha = 1.0f;
+                // Golpe brusco, no un fundido: negro instantaneo, unos
+                // parpadeos rapidos imagen/negro (glitch), sostenido a full,
+                // y recien ahi un corte relativamente rapido. Un jumpscare
+                // real no se "desvanece suave", pega y se sostiene.
+                const float PRE_BLACK = 0.05f;
+                const float STROBE = 0.30f;
+                const float HOLD = 0.20f;
+
+                float t = jumpscareElapsed;
+                float jumpscareAlpha = 1.0f;
+                float blackOverride = 0.0f;
+
+                if (t < PRE_BLACK)
+                {
+                    blackOverride = 1.0f;
+                }
+                else if (t < PRE_BLACK + STROBE)
+                {
+                    float st = t - PRE_BLACK;
+                    bool showImage = (fmodf(st * 18.0f, 1.0f) > 0.5f);
+                    blackOverride = showImage ? 0.0f : 1.0f;
+                }
+                else if (t < PRE_BLACK + STROBE + HOLD)
+                {
+                    blackOverride = 0.0f;
+                }
                 else
-                    jumpscareAlpha = 1.0f - (jumpscareElapsed - ATTACK - HOLD) / (JUMPSCARE_IMAGE_DURATION - ATTACK - HOLD);
-                jumpscareAlpha = glm::clamp(jumpscareAlpha, 0.0f, 1.0f);
+                {
+                    float relT = t - (PRE_BLACK + STROBE + HOLD);
+                    float relDur = JUMPSCARE_IMAGE_DURATION - (PRE_BLACK + STROBE + HOLD);
+                    jumpscareAlpha = 1.0f - glm::clamp(relT / (std::max)(relDur, 0.001f), 0.0f, 1.0f);
+                    blackOverride = 0.0f;
+                }
 
                 glDisable(GL_DEPTH_TEST);
                 glEnable(GL_BLEND);
@@ -1736,6 +1798,7 @@ namespace Warehouse {
                 jumpscareShader.use();
                 jumpscareShader.setInt("jumpscareTex", 0);
                 jumpscareShader.setFloat("alpha", jumpscareAlpha);
+                jumpscareShader.setFloat("blackOverride", blackOverride);
                 glActiveTexture(GL_TEXTURE0);
                 glBindTexture(GL_TEXTURE_2D, jumpscareTex);
 
