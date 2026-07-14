@@ -147,6 +147,11 @@
   <ItemGroup>
     <ClCompile Include="glad.c" />
     <ClCompile Include="Scene_Samy.cpp" />
+    <ClCompile Include="Scene_Anahi.cpp" />
+    <ClCompile Include="Scene_Josue.cpp" />
+    <ClCompile Include="main_warehouse.cpp" />
+    <ClCompile Include="Scene_Pasillo.cpp" />
+    <ClCompile Include="Source.cpp" />
   </ItemGroup>
   <ItemGroup>
     <None Include="shaders\Fragment_Samy.fs" />

@@ -1,5 +1,5 @@
 // ==============================
-//    ESCENA VR ROOM - Josue
+//    ESCENA VR ROOM - Josue (Final / Persecución)
 // ==============================
 #include <glad/glad.h>
 #include <GLFW/glfw3.h>
@@ -15,477 +15,486 @@
 
 #include <iostream>
 #include <string>
-
-#define STB_IMAGE_IMPLEMENTATION
-#include <learnopengl/stb_image.h>
 #include <filesystem>
 
-void framebuffer_size_callback(GLFWwindow* window, int width, int height);
-void mouse_callback(GLFWwindow* window, double xpos, double ypos);
-void scroll_callback(GLFWwindow* window, double xoffset, double yoffset);
-void processInput(GLFWwindow* window);
-void ClampPlayerToRoom();
-unsigned int loadTexture(char const* path);
+#include <learnopengl/stb_image.h>
 
-bool pKeyPressedLastFrame = false;
-bool upKeyPressedLastFrame = false;
-bool downKeyPressedLastFrame = false;
+extern enum SceneType { SCENE_PASILLO, SCENE_SAMY, SCENE_ANI, SCENE_MATTHEW, SCENE_JOSUE };
+extern SceneType g_CurrentScene;
+extern SceneType g_NextScene;
 
-// settings
-const unsigned int SCR_WIDTH = 1280;
-const unsigned int SCR_HEIGHT = 720;
+namespace Josue {
+    void framebuffer_size_callback(GLFWwindow* window, int width, int height);
+    void mouse_callback(GLFWwindow* window, double xpos, double ypos);
+    void scroll_callback(GLFWwindow* window, double xoffset, double yoffset);
+    void processInput(GLFWwindow* window);
+    void ClampPlayerToRoom();
+    unsigned int loadTexture(char const* path);
 
-// =========================================================
-// ESTADOS DE JUEGO (Mecánica de Jumpscare)
-// =========================================================
-enum GameState {
-    PLAYING,
-    JUMPSCARE,
-    BLACK_SCREEN
-};
-GameState gameState = PLAYING;
-float stateTimer = 0.0f;
+    static bool pKeyPressedLastFrame = false;
+    static bool upKeyPressedLastFrame = false;
+    static bool downKeyPressedLastFrame = false;
 
-// =========================================================
-// ESCALA Y POSICIÓN
-// =========================================================
-float worldScale = 0.05f;
-Camera camera(glm::vec3(0.0f, 1.2f, 1.0f));
-float lastX = SCR_WIDTH / 2.0f;
-float lastY = SCR_HEIGHT / 2.0f;
-bool firstMouse = true;
+    // settings
+    static unsigned int SCR_WIDTH = 1280;
+    static unsigned int SCR_HEIGHT = 720;
 
-// timing
-float deltaTime = 0.0f;
-float lastFrame = 0.0f;
-float gameStartTime = 0.0f;
-
-// --- Entidad que persigue al jugador ---
-glm::vec3 entityPos = glm::vec3(0.0f, 0.0f, -25.0f);
-float entitySpeed = 2.0f;
-bool entityInitialized = false;
-
-// =========================================================
-// VARIABLES DE LA LINTERNA
-// =========================================================
-bool flashlightOn = true;
-bool fKeyPressedLastFrame = false;
-float linternaOffsetX = 0.015f;
-float linternaOffsetY = -0.085f;
-float linternaOffsetZ = 0.18f;
-
-// =========================================================
-// LÍMITES DE COLISIÓN
-// =========================================================
-float roomMinX = -1.8f;
-float roomMaxX = 2.1f;
-float roomMinZ = -18.0f;
-float roomMaxZ = 347.0f;
-float playerHeight = 1.2f;
-
-// =========================================================
-// COORDENADAS BASE DE LOS LETREROS (Del Piso)
-// =========================================================
-float baseLightX[5] = { 0.10074f,   0.259016f,  0.0407524f, 0.0422577f, 0.113721f };
-float baseLightZ[5] = { -0.387055f, 17.4112f,   32.5504f,   50.2641f,   65.4025f };
-float roofHeightY = 4.0f;
-
-// =========================================================
-// AUDIO - FLAGS DE CONTROL
-// =========================================================
-bool ambientPlayed = false;
-bool screamPlayed = false;
-
-int main()
-{
-    glfwInit();
-    glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
-    glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
-    glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
-
-#ifdef __APPLE__
-    glfwWindowHint(GLFW_OPENGL_FORWARD_COMPAT, GL_TRUE);
-#endif
-
-    GLFWwindow* window = glfwCreateWindow(SCR_WIDTH, SCR_HEIGHT, "VR Room - Josue", NULL, NULL);
-    if (window == NULL)
-    {
-        std::cout << "Failed to create GLFW window" << std::endl;
-        glfwTerminate();
-        return -1;
-    }
-    glfwMakeContextCurrent(window);
-    glfwSetFramebufferSizeCallback(window, framebuffer_size_callback);
-    glfwSetCursorPosCallback(window, mouse_callback);
-    glfwSetScrollCallback(window, scroll_callback);
-    glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
-
-    if (!gladLoadGLLoader((GLADloadproc)glfwGetProcAddress))
-    {
-        std::cout << "Failed to initialize GLAD" << std::endl;
-        return -1;
-    }
-
-    glEnable(GL_DEPTH_TEST);
-    std::cout << "Working directory: " << std::filesystem::current_path() << std::endl;
-
-    // --- INICIALIZAR AUDIO ---
-    initaudio();
-    setvolume(100);
-
-    // --- PRECARGAR el grito ANTES del render loop, para que suene instantáneo ---
-    preloadSound("music/scream.mp3", "screamsound");
-
-    Shader ourShader("shaders/Vertex_Josue.vs", "shaders/Fragment_Josue.fs");
-    Model exitModel("./model/exit/exit.obj");
-    Model entidadModel("./model/exit/entidad.obj");
-
-    unsigned int screamTexture = loadTexture("./model/exit/scream.jpeg");
-
-    float quadVertices[] = {
-        // Posiciones   // Texturas
-        -1.0f,  1.0f,  0.0f, 0.0f,
-        -1.0f, -1.0f,  0.0f, 1.0f,
-         1.0f, -1.0f,  1.0f, 1.0f,
-        -1.0f,  1.0f,  0.0f, 0.0f,
-         1.0f, -1.0f,  1.0f, 1.0f,
-         1.0f,  1.0f,  1.0f, 0.0f
+    // =========================================================
+    // ESTADOS DE JUEGO (Mecánica de Jumpscare)
+    // =========================================================
+    enum GameState {
+        PLAYING,
+        JUMPSCARE,
+        BLACK_SCREEN
     };
-    unsigned int quadVAO, quadVBO;
-    glGenVertexArrays(1, &quadVAO);
-    glGenBuffers(1, &quadVBO);
-    glBindVertexArray(quadVAO);
-    glBindBuffer(GL_ARRAY_BUFFER, quadVBO);
-    glBufferData(GL_ARRAY_BUFFER, sizeof(quadVertices), &quadVertices, GL_STATIC_DRAW);
-    glEnableVertexAttribArray(0);
-    glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 4 * sizeof(float), (void*)0);
-    glEnableVertexAttribArray(1);
-    glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 4 * sizeof(float), (void*)(2 * sizeof(float)));
+    static GameState gameState = PLAYING;
+    static float stateTimer = 0.0f;
 
-    const char* vShaderCode = "#version 330 core\nlayout (location = 0) in vec2 aPos;\nlayout (location = 1) in vec2 aTexCoords;\nout vec2 TexCoords;\nvoid main() { TexCoords = aTexCoords; gl_Position = vec4(aPos.x, aPos.y, 0.0, 1.0); }\n";
-    const char* fShaderCode = "#version 330 core\nout vec4 FragColor;\nin vec2 TexCoords;\nuniform sampler2D screenTexture;\nvoid main() { FragColor = texture(screenTexture, TexCoords); }\n";
+    // =========================================================
+    // ESCALA Y POSICIÓN
+    // =========================================================
+    static float worldScale = 0.05f;
+    static Camera camera(glm::vec3(0.0f, 1.2f, 1.0f));
+    static float lastX = 1280.0f / 2.0f;
+    static float lastY = 720.0f / 2.0f;
+    static bool firstMouse = true;
 
-    unsigned int vertex, fragment, quadShaderProgram;
-    vertex = glCreateShader(GL_VERTEX_SHADER);
-    glShaderSource(vertex, 1, &vShaderCode, NULL);
-    glCompileShader(vertex);
-    fragment = glCreateShader(GL_FRAGMENT_SHADER);
-    glShaderSource(fragment, 1, &fShaderCode, NULL);
-    glCompileShader(fragment);
-    quadShaderProgram = glCreateProgram();
-    glAttachShader(quadShaderProgram, vertex);
-    glAttachShader(quadShaderProgram, fragment);
-    glLinkProgram(quadShaderProgram);
-    glDeleteShader(vertex);
-    glDeleteShader(fragment);
+    // timing
+    static float deltaTime = 0.0f;
+    static float lastFrame = 0.0f;
+    static float gameStartTime = 0.0f;
 
-    gameStartTime = (float)glfwGetTime();
+    // --- Entidad que persigue al jugador ---
+    static glm::vec3 entityPos = glm::vec3(0.0f, 0.0f, -25.0f);
+    static float entitySpeed = 2.0f;
+    static bool entityInitialized = false;
 
-    while (!glfwWindowShouldClose(window))
+    // =========================================================
+    // VARIABLES DE LA LINTERNA
+    // =========================================================
+    static bool flashlightOn = true;
+    static bool fKeyPressedLastFrame = false;
+    static float linternaOffsetX = 0.015f;
+    static float linternaOffsetY = -0.085f;
+    static float linternaOffsetZ = 0.18f;
+
+    // =========================================================
+    // LÍMITES DE COLISIÓN
+    // =========================================================
+    static float roomMinX = -1.8f;
+    static float roomMaxX = 2.1f;
+    static float roomMinZ = -18.0f;
+    static float roomMaxZ = 347.0f;
+    static float playerHeight = 1.2f;
+
+    // =========================================================
+    // COORDENADAS BASE DE LOS LETREROS (Del Piso)
+    // =========================================================
+    static float baseLightX[5] = { 0.10074f,   0.259016f,  0.0407524f, 0.0422577f, 0.113721f };
+    static float baseLightZ[5] = { -0.387055f, 17.4112f,   32.5504f,   50.2641f,   65.4025f };
+    static float roofHeightY = 4.0f;
+
+    // =========================================================
+    // AUDIO - FLAGS DE CONTROL
+    // =========================================================
+    static bool ambientPlayed = false;
+    static bool screamPlayed = false;
+
+    void RunScene(GLFWwindow* window)
     {
-        float absoluteTime = (float)glfwGetTime();
-        deltaTime = absoluteTime - lastFrame;
-        lastFrame = absoluteTime;
+        // Registrar callbacks locales para esta escena
+        glfwSetFramebufferSizeCallback(window, framebuffer_size_callback);
+        glfwSetCursorPosCallback(window, mouse_callback);
+        glfwSetScrollCallback(window, scroll_callback);
+        glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
 
-        processInput(window);
+        // Reiniciar variables de estado locales
+        gameState = PLAYING;
+        stateTimer = 0.0f;
+        camera = Camera(glm::vec3(0.0f, 1.2f, 1.0f), glm::vec3(0.0f, 1.0f, 0.0f), 90.0f, 0.0f);
+        firstMouse = true;
+        entityPos = glm::vec3(0.0f, 0.0f, -25.0f);
+        entitySpeed = 2.0f;
+        flashlightOn = true;
+        fKeyPressedLastFrame = false;
+        ambientPlayed = false;
+        screamPlayed = false;
 
-        // --- AUDIO: música de fondo apenas arranca el juego ---
-        if (!ambientPlayed)
+        int width, height;
+        glfwGetFramebufferSize(window, &width, &height);
+        SCR_WIDTH = width;
+        SCR_HEIGHT = height;
+
+        // --- INICIALIZAR AUDIO ---
+        initaudio();
+        setvolume(100);
+
+        // --- PRECARGAR el grito ANTES del render loop, para que suene instantáneo ---
+        preloadSound("music/scream.mp3", "screamsound");
+
+        Shader ourShader("shaders/Vertex_Josue.vs", "shaders/Fragment_Josue.fs");
+        Model exitModel("./model/exit/exit.obj");
+        Model entidadModel("./model/exit/entidad.obj");
+
+        unsigned int screamTexture = loadTexture("./model/exit/scream.jpeg");
+
+        float quadVertices[] = {
+            // Posiciones   // Texturas
+            -1.0f,  1.0f,  0.0f, 0.0f,
+            -1.0f, -1.0f,  0.0f, 1.0f,
+             1.0f, -1.0f,  1.0f, 1.0f,
+            -1.0f,  1.0f,  0.0f, 0.0f,
+             1.0f, -1.0f,  1.0f, 1.0f,
+             1.0f,  1.0f,  1.0f, 0.0f
+        };
+        unsigned int quadVAO, quadVBO;
+        glGenVertexArrays(1, &quadVAO);
+        glGenBuffers(1, &quadVBO);
+        glBindVertexArray(quadVAO);
+        glBindBuffer(GL_ARRAY_BUFFER, quadVBO);
+        glBufferData(GL_ARRAY_BUFFER, sizeof(quadVertices), &quadVertices, GL_STATIC_DRAW);
+        glEnableVertexAttribArray(0);
+        glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 4 * sizeof(float), (void*)0);
+        glEnableVertexAttribArray(1);
+        glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 4 * sizeof(float), (void*)(2 * sizeof(float)));
+
+        const char* vShaderCode = "#version 330 core\nlayout (location = 0) in vec2 aPos;\nlayout (location = 1) in vec2 aTexCoords;\nout vec2 TexCoords;\nvoid main() { TexCoords = aTexCoords; gl_Position = vec4(aPos.x, aPos.y, 0.0, 1.0); }\n";
+        const char* fShaderCode = "#version 330 core\nout vec4 FragColor;\nin vec2 TexCoords;\nuniform sampler2D screenTexture;\nvoid main() { FragColor = texture(screenTexture, TexCoords); }\n";
+
+        unsigned int vertex, fragment, quadShaderProgram;
+        vertex = glCreateShader(GL_VERTEX_SHADER);
+        glShaderSource(vertex, 1, &vShaderCode, NULL);
+        glCompileShader(vertex);
+        fragment = glCreateShader(GL_FRAGMENT_SHADER);
+        glShaderSource(fragment, 1, &fShaderCode, NULL);
+        glCompileShader(fragment);
+        quadShaderProgram = glCreateProgram();
+        glAttachShader(quadShaderProgram, vertex);
+        glAttachShader(quadShaderProgram, fragment);
+        glLinkProgram(quadShaderProgram);
+        glDeleteShader(vertex);
+        glDeleteShader(fragment);
+
+        gameStartTime = (float)glfwGetTime();
+        lastFrame = (float)glfwGetTime();
+
+        while (!glfwWindowShouldClose(window) && g_NextScene == g_CurrentScene)
         {
-            playmusic("music/ambiente.mp3");
-            ambientPlayed = true;
-        }
+            float absoluteTime = (float)glfwGetTime();
+            deltaTime = absoluteTime - lastFrame;
+            lastFrame = absoluteTime;
 
-        glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
-        glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+            processInput(window);
 
-        if (gameState == PLAYING)
-        {
-            float currentSceneTime = absoluteTime - gameStartTime;
-            if (currentSceneTime < 7.0f) {
-                entitySpeed = 2.0f;
-            }
-            else {
-                entitySpeed = 25.0f;
-            }
-
-            glEnable(GL_DEPTH_TEST);
-
-            ourShader.use();
-            glm::mat4 projection = glm::perspective(glm::radians(camera.Zoom), (float)SCR_WIDTH / (float)SCR_HEIGHT, 0.1f, 500.0f);
-            glm::mat4 view = camera.GetViewMatrix();
-            ourShader.setMat4("projection", projection);
-            ourShader.setMat4("view", view);
-            ourShader.setVec3("viewPos", camera.Position);
-
-            ourShader.setVec3("lightDir", glm::vec3(-0.3f, -1.0f, -0.2f));
-            ourShader.setVec3("lightColor", glm::vec3(0.02f, 0.02f, 0.03f));
-            ourShader.setFloat("specularStrength", 0.05f);
-
-            glm::vec3 handOffset = (camera.Right * linternaOffsetX) + (camera.Up * linternaOffsetY) + (camera.Front * linternaOffsetZ);
-            glm::vec3 currentLinternaPos = camera.Position + handOffset;
-
-            ourShader.setVec3("spotLight.position", currentLinternaPos);
-            ourShader.setVec3("spotLight.direction", camera.Front);
-
-            if (flashlightOn) {
-                ourShader.setVec3("spotLight.ambient", glm::vec3(0.0f));
-                ourShader.setVec3("spotLight.diffuse", glm::vec3(2.0f, 2.0f, 1.8f));
-                ourShader.setVec3("spotLight.specular", glm::vec3(1.2f, 1.2f, 1.0f));
-            }
-            else {
-                ourShader.setVec3("spotLight.ambient", glm::vec3(0.0f));
-                ourShader.setVec3("spotLight.diffuse", glm::vec3(0.0f));
-                ourShader.setVec3("spotLight.specular", glm::vec3(0.0f));
-            }
-
-            ourShader.setFloat("spotLight.constant", 1.0f);
-            ourShader.setFloat("spotLight.linear", 0.09f);
-            ourShader.setFloat("spotLight.quadratic", 0.032f);
-            ourShader.setFloat("spotLight.cutOff", glm::cos(glm::radians(10.0f)));
-            ourShader.setFloat("spotLight.outerCutOff", glm::cos(glm::radians(25.0f)));
-
-            int numPasillos = 4;
-            float longitudPasillo = 91.5f;
-            int lightIndex = 0;
-
-            for (int i = 0; i < numPasillos; i++)
+            // --- AUDIO: música de fondo apenas arranca el juego ---
+            if (!ambientPlayed)
             {
-                glm::mat4 exitMat = glm::mat4(1.0f);
-                exitMat = glm::translate(exitMat, glm::vec3(0.0f, 1.0f * worldScale, i * longitudPasillo));
-                exitMat = glm::scale(exitMat, glm::vec3(worldScale));
-                ourShader.setMat4("model", exitMat);
-                exitModel.Draw(ourShader);
+                playmusic("music/ambiente.mp3");
+                ambientPlayed = true;
+            }
 
-                for (int j = 0; j < 5; j++)
+            glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
+            glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+
+            if (gameState == PLAYING)
+            {
+                float currentSceneTime = absoluteTime - gameStartTime;
+                if (currentSceneTime < 7.0f) {
+                    entitySpeed = 2.0f;
+                }
+                else {
+                    entitySpeed = 25.0f;
+                }
+
+                glEnable(GL_DEPTH_TEST);
+
+                ourShader.use();
+                
+                // Actualizar proyección por si cambia tamaño ventana
+                glfwGetFramebufferSize(window, &width, &height);
+                SCR_WIDTH = width;
+                SCR_HEIGHT = height;
+                glm::mat4 projection = glm::perspective(glm::radians(camera.Zoom), (float)SCR_WIDTH / (float)SCR_HEIGHT, 0.1f, 500.0f);
+                glm::mat4 view = camera.GetViewMatrix();
+                ourShader.setMat4("projection", projection);
+                ourShader.setMat4("view", view);
+                ourShader.setVec3("viewPos", camera.Position);
+
+                ourShader.setVec3("lightDir", glm::vec3(-0.3f, -1.0f, -0.2f));
+                ourShader.setVec3("lightColor", glm::vec3(0.02f, 0.02f, 0.03f));
+                ourShader.setFloat("specularStrength", 0.05f);
+
+                glm::vec3 handOffset = (camera.Right * linternaOffsetX) + (camera.Up * linternaOffsetY) + (camera.Front * linternaOffsetZ);
+                glm::vec3 currentLinternaPos = camera.Position + handOffset;
+
+                ourShader.setVec3("spotLight.position", currentLinternaPos);
+                ourShader.setVec3("spotLight.direction", camera.Front);
+
+                if (flashlightOn) {
+                    ourShader.setVec3("spotLight.ambient", glm::vec3(0.0f));
+                    ourShader.setVec3("spotLight.diffuse", glm::vec3(2.0f, 2.0f, 1.8f));
+                    ourShader.setVec3("spotLight.specular", glm::vec3(1.2f, 1.2f, 1.0f));
+                }
+                else {
+                    ourShader.setVec3("spotLight.ambient", glm::vec3(0.0f));
+                    ourShader.setVec3("spotLight.diffuse", glm::vec3(0.0f));
+                    ourShader.setVec3("spotLight.specular", glm::vec3(0.0f));
+                }
+
+                ourShader.setFloat("spotLight.constant", 1.0f);
+                ourShader.setFloat("spotLight.linear", 0.09f);
+                ourShader.setFloat("spotLight.quadratic", 0.032f);
+                ourShader.setFloat("spotLight.cutOff", glm::cos(glm::radians(10.0f)));
+                ourShader.setFloat("spotLight.outerCutOff", glm::cos(glm::radians(25.0f)));
+
+                int numPasillos = 4;
+                float longitudPasillo = 91.5f;
+                int lightIndex = 0;
+
+                for (int i = 0; i < numPasillos; i++)
                 {
-                    float currentZ = baseLightZ[j] + (i * longitudPasillo);
-                    glm::vec3 pos = glm::vec3(baseLightX[j], roofHeightY, currentZ);
+                    glm::mat4 exitMat = glm::mat4(1.0f);
+                    exitMat = glm::translate(exitMat, glm::vec3(0.0f, 1.0f * worldScale, i * longitudPasillo));
+                    exitMat = glm::scale(exitMat, glm::vec3(worldScale));
+                    ourShader.setMat4("model", exitMat);
+                    exitModel.Draw(ourShader);
 
-                    float phase = (float)lightIndex * 2.3f;
-                    float noise = sin(absoluteTime * 12.0f + phase) * cos(absoluteTime * 15.0f + phase * 0.5f);
-                    float flicker = (noise > 0.4f) ? 0.15f : 1.0f;
+                    for (int j = 0; j < 5; j++)
+                    {
+                        float currentZ = baseLightZ[j] + (i * longitudPasillo);
+                        glm::vec3 pos = glm::vec3(baseLightX[j], roofHeightY, currentZ);
 
-                    std::string base = "pointLights[" + std::to_string(lightIndex) + "].";
-                    ourShader.setVec3(base + "position", pos);
-                    ourShader.setVec3(base + "ambient", glm::vec3(0.05f, 0.0f, 0.0f) * flicker);
-                    ourShader.setVec3(base + "diffuse", glm::vec3(1.5f, 0.1f, 0.1f) * flicker);
-                    ourShader.setVec3(base + "specular", glm::vec3(1.0f, 0.0f, 0.0f) * flicker);
-                    ourShader.setFloat(base + "constant", 1.0f);
-                    ourShader.setFloat(base + "linear", 0.3f);
-                    ourShader.setFloat(base + "quadratic", 0.2f);
+                        float phase = (float)lightIndex * 2.3f;
+                        float noise = sin(absoluteTime * 12.0f + phase) * cos(absoluteTime * 15.0f + phase * 0.5f);
+                        float flicker = (noise > 0.4f) ? 0.15f : 1.0f;
 
-                    lightIndex++;
+                        std::string base = "pointLights[" + std::to_string(lightIndex) + "].";
+                        ourShader.setVec3(base + "position", pos);
+                        ourShader.setVec3(base + "ambient", glm::vec3(0.05f, 0.0f, 0.0f) * flicker);
+                        ourShader.setVec3(base + "diffuse", glm::vec3(1.5f, 0.1f, 0.1f) * flicker);
+                        ourShader.setVec3(base + "specular", glm::vec3(1.0f, 0.0f, 0.0f) * flicker);
+                        ourShader.setFloat(base + "constant", 1.0f);
+                        ourShader.setFloat(base + "linear", 0.3f);
+                        ourShader.setFloat(base + "quadratic", 0.2f);
+
+                        lightIndex++;
+                    }
+                }
+
+                // Movimiento Entidad
+                glm::vec3 direction = glm::vec3(0.0f, 0.0f, camera.Position.z - entityPos.z);
+                float distZ = glm::length(direction);
+
+                if (distZ > 0.05f)
+                {
+                    direction = glm::normalize(direction);
+                    entityPos += direction * entitySpeed * deltaTime;
+                }
+
+                float angleToPlayer = atan2(direction.x, direction.z);
+
+                glm::mat4 entidadMat = glm::mat4(1.0f);
+                entidadMat = glm::translate(entidadMat, entityPos);
+                entidadMat = glm::rotate(entidadMat, angleToPlayer, glm::vec3(0.0f, 1.0f, 0.0f));
+                entidadMat = glm::scale(entidadMat, glm::vec3(worldScale));
+                ourShader.setMat4("model", entidadMat);
+                entidadModel.Draw(ourShader);
+
+                // =========================================================
+                // COLISIÓN (Si te toca -> Cambio al estado JUMPSCARE)
+                // =========================================================
+                float dx = camera.Position.x - entityPos.x;
+                float dz = camera.Position.z - entityPos.z;
+                float captureDistance = sqrt((dx * dx) + (dz * dz));
+                float collisionRadius = 2.0f;
+
+                if (captureDistance < collisionRadius)
+                {
+                    gameState = JUMPSCARE;
+                    stateTimer = (float)glfwGetTime();
+
+                    // --- AUDIO: detener ambiente y reproducir el grito YA PRECARGADO (instantáneo) ---
+                    haltmusic();
+                    if (!screamPlayed)
+                    {
+                        playPreloaded("screamsound");
+                        screamPlayed = true;
+                    }
+                }
+            }
+            else if (gameState == JUMPSCARE)
+            {
+                glDisable(GL_DEPTH_TEST);
+                glUseProgram(quadShaderProgram);
+                glBindVertexArray(quadVAO);
+                glBindTexture(GL_TEXTURE_2D, screamTexture);
+                glDrawArrays(GL_TRIANGLES, 0, 6);
+
+                if (absoluteTime - stateTimer >= 1.5f) {
+                    gameState = BLACK_SCREEN;
+                    stateTimer = (float)glfwGetTime();
+                }
+            }
+            else if (gameState == BLACK_SCREEN)
+            {
+                if (absoluteTime - stateTimer >= 4.0f) {
+                    camera.Position = glm::vec3(0.0f, 1.2f, 1.0f);
+                    entityPos = glm::vec3(0.0f, 0.0f, -25.0f);
+
+                    gameStartTime = (float)glfwGetTime();
+                    gameState = PLAYING;
+
+                    // --- AUDIO: reiniciar flags y volver a poner ambiente ---
+                    screamPlayed = false;
+                    ambientPlayed = false;
                 }
             }
 
-            // Movimiento Entidad
-            glm::vec3 direction = glm::vec3(0.0f, 0.0f, camera.Position.z - entityPos.z);
-            float distZ = glm::length(direction);
-
-            if (distZ > 0.05f)
-            {
-                direction = glm::normalize(direction);
-                entityPos += direction * entitySpeed * deltaTime;
-            }
-
-            float angleToPlayer = atan2(direction.x, direction.z);
-
-            glm::mat4 entidadMat = glm::mat4(1.0f);
-            entidadMat = glm::translate(entidadMat, entityPos);
-            entidadMat = glm::rotate(entidadMat, angleToPlayer, glm::vec3(0.0f, 1.0f, 0.0f));
-            entidadMat = glm::scale(entidadMat, glm::vec3(worldScale));
-            ourShader.setMat4("model", entidadMat);
-            entidadModel.Draw(ourShader);
-
-            // =========================================================
-            // COLISIÓN (Si te toca -> Cambio al estado JUMPSCARE)
-            // =========================================================
-            float dx = camera.Position.x - entityPos.x;
-            float dz = camera.Position.z - entityPos.z;
-            float captureDistance = sqrt((dx * dx) + (dz * dz));
-            float collisionRadius = 2.0f;
-
-            if (captureDistance < collisionRadius)
-            {
-                gameState = JUMPSCARE;
-                stateTimer = (float)glfwGetTime();
-
-                // --- AUDIO: detener ambiente y reproducir el grito YA PRECARGADO (instantáneo) ---
-                haltmusic();
-                if (!screamPlayed)
-                {
-                    playPreloaded("screamsound");
-                    screamPlayed = true;
-                }
-            }
+            glfwSwapBuffers(window);
+            glfwPollEvents();
         }
-        else if (gameState == JUMPSCARE)
+
+        haltmusic();
+        haltsound();
+        closePreloaded("screamsound");
+        glDeleteVertexArrays(1, &quadVAO);
+        glDeleteBuffers(1, &quadVBO);
+        glDeleteProgram(quadShaderProgram);
+    }
+
+    unsigned int loadTexture(char const* path)
+    {
+        unsigned int textureID;
+        glGenTextures(1, &textureID);
+
+        int width, height, nrComponents;
+        unsigned char* data = stbi_load(path, &width, &height, &nrComponents, 0);
+        if (data)
         {
-            glDisable(GL_DEPTH_TEST);
-            glUseProgram(quadShaderProgram);
-            glBindVertexArray(quadVAO);
-            glBindTexture(GL_TEXTURE_2D, screamTexture);
-            glDrawArrays(GL_TRIANGLES, 0, 6);
+            GLenum format;
+            if (nrComponents == 1) format = GL_RED;
+            else if (nrComponents == 3) format = GL_RGB;
+            else if (nrComponents == 4) format = GL_RGBA;
 
-            if (absoluteTime - stateTimer >= 1.5f) {
-                gameState = BLACK_SCREEN;
-                stateTimer = (float)glfwGetTime();
-            }
+            glBindTexture(GL_TEXTURE_2D, textureID);
+            glTexImage2D(GL_TEXTURE_2D, 0, format, width, height, 0, format, GL_UNSIGNED_BYTE, data);
+            glGenerateMipmap(GL_TEXTURE_2D);
+
+            stbi_image_free(data);
         }
-        else if (gameState == BLACK_SCREEN)
+        else
         {
-            if (absoluteTime - stateTimer >= 4.0f) {
-                camera.Position = glm::vec3(0.0f, 1.2f, 1.0f);
-                entityPos = glm::vec3(0.0f, 0.0f, -25.0f);
+            std::cout << "Texture failed to load at path: " << path << std::endl;
+            stbi_image_free(data);
+        }
+        return textureID;
+    }
 
-                gameStartTime = (float)glfwGetTime();
-                gameState = PLAYING;
+    void ClampPlayerToRoom()
+    {
+        camera.Position.x = glm::clamp(camera.Position.x, roomMinX, roomMaxX);
+        camera.Position.z = glm::clamp(camera.Position.z, roomMinZ, roomMaxZ);
+        camera.Position.y = playerHeight;
+    }
 
-                // --- AUDIO: reiniciar flags y volver a poner ambiente ---
-                screamPlayed = false;
-                ambientPlayed = false;
-            }
+    void processInput(GLFWwindow* window)
+    {
+        if (glfwGetKey(window, GLFW_KEY_ESCAPE) == GLFW_PRESS)
+            glfwSetWindowShouldClose(window, true);
+
+        // Volver al Pasillo principal
+        if (glfwGetKey(window, GLFW_KEY_H) == GLFW_PRESS)
+            g_NextScene = SCENE_PASILLO;
+
+        if (gameState != PLAYING) {
+            return;
         }
 
-        glfwSwapBuffers(window);
-        glfwPollEvents();
+        // --- Bloquea el movimiento los primeros 5 segundos de cada partida ---
+        float currentTime = (float)glfwGetTime();
+        if (currentTime - gameStartTime < 5.0f) {
+            return; // ESC ya se procesó arriba; el resto se ignora
+        }
+
+        if (glfwGetKey(window, GLFW_KEY_LEFT_SHIFT) == GLFW_PRESS)
+            camera.MovementSpeed = 25.4f;
+        else
+            camera.MovementSpeed = 8.0f;
+
+        if (glfwGetKey(window, GLFW_KEY_W) == GLFW_PRESS)
+            camera.ProcessKeyboard(FORWARD, deltaTime);
+        if (glfwGetKey(window, GLFW_KEY_S) == GLFW_PRESS)
+            camera.ProcessKeyboard(BACKWARD, deltaTime);
+        if (glfwGetKey(window, GLFW_KEY_A) == GLFW_PRESS)
+            camera.ProcessKeyboard(LEFT, deltaTime);
+        if (glfwGetKey(window, GLFW_KEY_D) == GLFW_PRESS)
+            camera.ProcessKeyboard(RIGHT, deltaTime);
+
+        ClampPlayerToRoom();
+
+        bool fPressed = glfwGetKey(window, GLFW_KEY_F) == GLFW_PRESS;
+        if (fPressed && !fKeyPressedLastFrame)
+        {
+            flashlightOn = !flashlightOn;
+        }
+        fKeyPressedLastFrame = fPressed;
+
+        bool upPressed = glfwGetKey(window, GLFW_KEY_UP) == GLFW_PRESS;
+        if (upPressed && !upKeyPressedLastFrame)
+        {
+            setvolume(get_global_volume() + 10);
+        }
+        upKeyPressedLastFrame = upPressed;
+
+        bool downPressed = glfwGetKey(window, GLFW_KEY_DOWN) == GLFW_PRESS;
+        if (downPressed && !downKeyPressedLastFrame)
+        {
+            setvolume(get_global_volume() - 10);
+        }
+        downKeyPressedLastFrame = downPressed;
+
+        bool pPressed = glfwGetKey(window, GLFW_KEY_P) == GLFW_PRESS;
+        if (pPressed && !pKeyPressedLastFrame)
+        {
+            std::cout << "camera.Position = ("
+                << camera.Position.x << ", "
+                << camera.Position.y << ", "
+                << camera.Position.z << ")" << std::endl;
+        }
+        pKeyPressedLastFrame = pPressed;
     }
 
-    haltmusic();
-    haltsound();
-    closePreloaded("screamsound");
-
-    glfwTerminate();
-    return 0;
-}
-
-unsigned int loadTexture(char const* path)
-{
-    unsigned int textureID;
-    glGenTextures(1, &textureID);
-
-    int width, height, nrComponents;
-    unsigned char* data = stbi_load(path, &width, &height, &nrComponents, 0);
-    if (data)
+    void framebuffer_size_callback(GLFWwindow* window, int width, int height)
     {
-        GLenum format;
-        if (nrComponents == 1) format = GL_RED;
-        else if (nrComponents == 3) format = GL_RGB;
-        else if (nrComponents == 4) format = GL_RGBA;
-
-        glBindTexture(GL_TEXTURE_2D, textureID);
-        glTexImage2D(GL_TEXTURE_2D, 0, format, width, height, 0, format, GL_UNSIGNED_BYTE, data);
-        glGenerateMipmap(GL_TEXTURE_2D);
-
-        stbi_image_free(data);
+        glViewport(0, 0, width, height);
+        SCR_WIDTH = width;
+        SCR_HEIGHT = height;
     }
-    else
+
+    void mouse_callback(GLFWwindow* window, double xpos, double ypos)
     {
-        std::cout << "Texture failed to load at path: " << path << std::endl;
-        stbi_image_free(data);
-    }
-    return textureID;
-}
+        if (firstMouse)
+        {
+            lastX = (float)xpos;
+            lastY = (float)ypos;
+            firstMouse = false;
+        }
 
-void ClampPlayerToRoom()
-{
-    camera.Position.x = glm::clamp(camera.Position.x, roomMinX, roomMaxX);
-    camera.Position.z = glm::clamp(camera.Position.z, roomMinZ, roomMaxZ);
-    camera.Position.y = playerHeight;
-}
+        float xoffset = (float)xpos - lastX;
+        float yoffset = lastY - (float)ypos;
 
-void processInput(GLFWwindow* window)
-{
-    if (glfwGetKey(window, GLFW_KEY_ESCAPE) == GLFW_PRESS)
-        glfwSetWindowShouldClose(window, true);
-
-    if (gameState != PLAYING) {
-        return;
-    }
-
-    // --- Bloquea el movimiento los primeros 5 segundos de cada partida ---
-    float currentTime = (float)glfwGetTime();
-    if (currentTime - gameStartTime < 5.0f) {
-        return; // ESC ya se procesó arriba; el resto (WASD, linterna, etc.) se ignora
-    }
-
-    if (glfwGetKey(window, GLFW_KEY_LEFT_SHIFT) == GLFW_PRESS)
-        camera.MovementSpeed = 25.4f;
-    else
-        camera.MovementSpeed = 8.0f;
-
-    if (glfwGetKey(window, GLFW_KEY_W) == GLFW_PRESS)
-        camera.ProcessKeyboard(FORWARD, deltaTime);
-    if (glfwGetKey(window, GLFW_KEY_S) == GLFW_PRESS)
-        camera.ProcessKeyboard(BACKWARD, deltaTime);
-    if (glfwGetKey(window, GLFW_KEY_A) == GLFW_PRESS)
-        camera.ProcessKeyboard(LEFT, deltaTime);
-    if (glfwGetKey(window, GLFW_KEY_D) == GLFW_PRESS)
-        camera.ProcessKeyboard(RIGHT, deltaTime);
-
-    ClampPlayerToRoom();
-
-    bool fPressed = glfwGetKey(window, GLFW_KEY_F) == GLFW_PRESS;
-    if (fPressed && !fKeyPressedLastFrame)
-    {
-        flashlightOn = !flashlightOn;
-    }
-    fKeyPressedLastFrame = fPressed;
-
-    bool upPressed = glfwGetKey(window, GLFW_KEY_UP) == GLFW_PRESS;
-    if (upPressed && !upKeyPressedLastFrame)
-    {
-        setvolume(get_global_volume() + 10);
-    }
-    upKeyPressedLastFrame = upPressed;
-
-    bool downPressed = glfwGetKey(window, GLFW_KEY_DOWN) == GLFW_PRESS;
-    if (downPressed && !downKeyPressedLastFrame)
-    {
-        setvolume(get_global_volume() - 10);
-    }
-    downKeyPressedLastFrame = downPressed;
-
-    bool pPressed = glfwGetKey(window, GLFW_KEY_P) == GLFW_PRESS;
-    if (pPressed && !pKeyPressedLastFrame)
-    {
-        std::cout << "camera.Position = ("
-            << camera.Position.x << ", "
-            << camera.Position.y << ", "
-            << camera.Position.z << ")" << std::endl;
-    }
-    pKeyPressedLastFrame = pPressed;
-}
-
-void framebuffer_size_callback(GLFWwindow* window, int width, int height)
-{
-    glViewport(0, 0, width, height);
-}
-
-void mouse_callback(GLFWwindow* window, double xpos, double ypos)
-{
-    if (firstMouse)
-    {
         lastX = (float)xpos;
         lastY = (float)ypos;
-        firstMouse = false;
+
+        if (gameState == PLAYING) {
+            camera.ProcessMouseMovement(xoffset, yoffset);
+        }
     }
 
-    float xoffset = (float)xpos - lastX;
-    float yoffset = lastY - (float)ypos;
-
-    lastX = (float)xpos;
-    lastY = (float)ypos;
-
-    if (gameState == PLAYING) {
-        camera.ProcessMouseMovement(xoffset, yoffset);
-    }
-}
-
-void scroll_callback(GLFWwindow* window, double xoffset, double yoffset)
-{
-    if (gameState == PLAYING) {
-        camera.ProcessMouseScroll((float)yoffset);
+    void scroll_callback(GLFWwindow* window, double xoffset, double yoffset)
+    {
+        if (gameState == PLAYING) {
+            camera.ProcessMouseScroll((float)yoffset);
+        }
     }
 }
