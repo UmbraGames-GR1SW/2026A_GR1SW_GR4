@@ -1611,7 +1611,7 @@ namespace Warehouse {
                 ourShader.setFloat("ornamentLightIntensities[" + std::to_string(i) + "]", ornamentIntensity[i]);
             }
 
-            // Shaders parametros extras
+              // Shaders parametros extras
             ourShader.setVec3("fogColor", FOG_COLOR);
             ourShader.setFloat("fogDensity", FOG_DENSITY);
             ourShader.setVec2("screenSize", glm::vec2((float)SCR_WIDTH, (float)SCR_HEIGHT));
