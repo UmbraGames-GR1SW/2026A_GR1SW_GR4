@@ -86,7 +86,15 @@ const float REPEATED_MODEL_TARGET_HEIGHT = 1.6f; // altura aproximada, ajustable
 const bool  REPEATED_MODEL_IS_Z_UP = false;
 const bool  REPEATED_MODEL_ADD_COLLISION = true;
 const int   REPEATED_MODEL_COUNT = 4;            // 4 puntas de la X
-const float REPEATED_MODEL_RADIUS_FROM_TREE = 6.5f; // distancia desde el arbol -- agrandado para dejar paso libre
+const float REPEATED_MODEL_RADIUS_FROM_TREE = 4.3f; // punto intermedio: deja paso libre sin quedar muy lejos
+
+// Temblor/sacudida de los zombies: saltos bruscos a un nuevo angulo cada
+// tanto (no una animacion suave), como un cuerpo roto/rigido. Se suma
+// un leve vaiven vertical continuo (respiracion superficial).
+const float ZOMBIE_TWITCH_YAW_DEG = 5.0f;      // cuanto puede "saltar" de angulo
+const float ZOMBIE_TWITCH_STEP_DURATION = 1.3f; // cada cuanto cambia el angulo
+const float ZOMBIE_TWITCH_BOB_AMOUNT = 0.025f;  // amplitud del vaiven vertical
+const float ZOMBIE_TWITCH_BOB_SPEED = 2.0f;
 const float REPEATED_MODEL_COLLISION_MARGIN = 0.4f;
 const bool  REPEATED_MODEL_FACE_CENTER = true;   // gira cada instancia mirando hacia el arbol
 const float REPEATED_MODEL_YAW_OFFSET_DEG = 0.0f; // ajustar +-90/180 si quedan mirando al reves
@@ -968,8 +976,13 @@ int main()
     }
 
     // -------------------- Modelos repetidos en X alrededor del arbol --------------------
+    struct RepeatedInstance {
+        glm::vec3 worldPos;
+        float yawDeg;
+        float scale;
+    };
     Model* repeatedModel = nullptr;
-    std::vector<glm::mat4> repeatedModelMatrices;
+    std::vector<RepeatedInstance> repeatedInstances;
     if (ADD_REPEATED_MODEL)
     {
         repeatedModel = new Model(REPEATED_MODEL_PATH);
@@ -1034,23 +1047,25 @@ int main()
                 finalRXZ.y - rLocalCenterXZ.y * repeatedScale
             );
 
-            glm::mat4 m = glm::translate(glm::mat4(1.0f), worldPos);
-
+            float yawDeg = 0.0f;
             if (REPEATED_MODEL_FACE_CENTER)
             {
                 glm::vec2 toCenter = glm::normalize(treeAnchorXZ - finalRXZ);
-                float yawDeg = glm::degrees(atan2f(toCenter.x, toCenter.y)) + REPEATED_MODEL_YAW_OFFSET_DEG;
-                m = glm::rotate(m, glm::radians(yawDeg), glm::vec3(0.0f, 1.0f, 0.0f));
+                yawDeg = glm::degrees(atan2f(toCenter.x, toCenter.y)) + REPEATED_MODEL_YAW_OFFSET_DEG;
             }
+
+            // Matriz base (sin temblor) para calcular la colision, que no
+            // necesita actualizarse cada frame por un movimiento tan chico.
+            glm::mat4 baseMatrix = glm::translate(glm::mat4(1.0f), worldPos);
+            baseMatrix = glm::rotate(baseMatrix, glm::radians(yawDeg), glm::vec3(0.0f, 1.0f, 0.0f));
             if (REPEATED_MODEL_IS_Z_UP)
-                m = glm::rotate(m, glm::radians(-90.0f), glm::vec3(1.0f, 0.0f, 0.0f));
-
-            m = glm::scale(m, glm::vec3(repeatedScale));
-
-            repeatedModelMatrices.push_back(m);
+                baseMatrix = glm::rotate(baseMatrix, glm::radians(-90.0f), glm::vec3(1.0f, 0.0f, 0.0f));
+            baseMatrix = glm::scale(baseMatrix, glm::vec3(repeatedScale));
 
             if (REPEATED_MODEL_ADD_COLLISION)
-                AddModelCollision(*repeatedModel, m, floorY);
+                AddModelCollision(*repeatedModel, baseMatrix, floorY);
+
+            repeatedInstances.push_back({ worldPos, yawDeg, repeatedScale });
 
             std::cout << "[DEBUG] Instancia " << i << " del modelo repetido en (" << finalRXZ.x << ", " << finalRXZ.y << ")" << std::endl;
         }
@@ -1334,11 +1349,31 @@ int main()
         }
 
         // Modelos repetidos (misma malla cargada 1 vez, dibujada N veces
-        // con distinta matriz) -- mismo shader, misma iluminacion.
+        // con distinta matriz) -- mismo shader, misma iluminacion. Cada
+        // instancia tiembla/se sacude de forma independiente.
         if (repeatedModel)
         {
-            for (auto& m : repeatedModelMatrices)
+            for (size_t i = 0; i < repeatedInstances.size(); i++)
             {
+                auto& inst = repeatedInstances[i];
+
+                // Salto brusco a un nuevo angulo cada ZOMBIE_TWITCH_STEP_DURATION
+                // segundos (no un giro suave) -- se siente como un cuerpo rigido
+                // sacudiendose, no una animacion fluida.
+                float twitchStep = floorf(currentFrame / ZOMBIE_TWITCH_STEP_DURATION + (float)i * 7.0f);
+                float twitchRoll = PseudoRandom01(twitchStep * 4.21f + (float)i * 33.1f);
+                float twitchYaw = (twitchRoll - 0.5f) * 2.0f * ZOMBIE_TWITCH_YAW_DEG;
+
+                // Vaiven vertical leve y continuo (respiracion superficial)
+                float bobPhase = (float)i * 2.399963f;
+                float bobY = sinf(currentFrame * ZOMBIE_TWITCH_BOB_SPEED + bobPhase) * ZOMBIE_TWITCH_BOB_AMOUNT;
+
+                glm::mat4 m = glm::translate(glm::mat4(1.0f), inst.worldPos + glm::vec3(0.0f, bobY, 0.0f));
+                m = glm::rotate(m, glm::radians(inst.yawDeg + twitchYaw), glm::vec3(0.0f, 1.0f, 0.0f));
+                if (REPEATED_MODEL_IS_Z_UP)
+                    m = glm::rotate(m, glm::radians(-90.0f), glm::vec3(1.0f, 0.0f, 0.0f));
+                m = glm::scale(m, glm::vec3(inst.scale));
+
                 glActiveTexture(GL_TEXTURE0);
                 glBindTexture(GL_TEXTURE_2D, fallbackWhiteTex);
                 ourShader.setMat4("model", m);
