@@ -413,9 +413,9 @@ namespace Anahi {
 
             if (!juegoIniciado)
             {
-                std::string linea1 = "Bienvenido";
-                std::string linea2 = "Intenta no asustarte.";
-                std::string linea3 = "Presiona ENTER para continuar.";
+                std::string linea1 = "Presiona ENTER";
+                std::string linea2 = "Para empezar a recordar.";
+                std::string linea3 = ".";
 
                 float scale1 = 0.7f;
                 float scale2 = 0.6f;
