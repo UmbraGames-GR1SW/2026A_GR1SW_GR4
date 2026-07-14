@@ -100,9 +100,10 @@ inline float GetTextWidth(const std::string& text, float scale) {
     return width;
 }
 
-inline void RenderText(Shader &s, std::string text, float x, float y, float scale, glm::vec3 color, float scrWidth, float scrHeight) {
+inline void RenderText(Shader &s, std::string text, float x, float y, float scale, glm::vec3 color, float scrWidth, float scrHeight, float alpha = 1.0f) {
     s.use();
     s.setVec3("textColor", color);
+    s.setFloat("textAlpha", alpha);
     
     glm::mat4 projection = glm::ortho(0.0f, scrWidth, 0.0f, scrHeight);
     s.setMat4("projection", projection);

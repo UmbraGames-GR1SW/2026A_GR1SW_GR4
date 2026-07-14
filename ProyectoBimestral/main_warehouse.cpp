@@ -29,6 +29,7 @@
 extern enum SceneType { SCENE_PASILLO, SCENE_SAMY, SCENE_ANI, SCENE_MATTHEW, SCENE_JOSUE };
 extern SceneType g_CurrentScene;
 extern SceneType g_NextScene;
+extern int g_UnlockedLevel;
 
 namespace Warehouse {
 
@@ -1844,8 +1845,12 @@ namespace Warehouse {
             glfwSetWindowShouldClose(window, true);
 
         // Volver al Pasillo
-        if (glfwGetKey(window, GLFW_KEY_H) == GLFW_PRESS)
+        if (glfwGetKey(window, GLFW_KEY_H) == GLFW_PRESS) {
+            if (g_UnlockedLevel < 4) {
+                g_UnlockedLevel = 4;
+            }
             g_NextScene = SCENE_PASILLO;
+        }
 
         static bool f1WasPressed = false;
         if (glfwGetKey(window, GLFW_KEY_F1) == GLFW_PRESS)
