@@ -159,9 +159,6 @@
     <None Include="shaders\Vertex_Anahi.vs" />
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="text_renderer.h" />
-  </ItemGroup>
-  <ItemGroup>
     <Media Include="audios\miedo.mp3" />
   </ItemGroup>
   <ItemGroup>
