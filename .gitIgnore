@@ -407,4 +407,11 @@ Release/
 # Excepciones para subir los assets de C_Tree
 !ProyectoBimestral/model/C_Tree/C_tree.obj
 !ProyectoBimestral/model/C_Tree/C_tree.mtl
+
+# Excepciones para subir los assets de la escena interior del Warehouse
+!ProyectoBimestral/model/Warehouse/abandoned_warehouse_-_interior_scene/interior_scene.obj
+!ProyectoBimestral/model/Warehouse/abandoned_warehouse_-_interior_scene/interior_scene.mtl
+!ProyectoBimestral/model/Warehouse/abandoned_warehouse_-_interior_scene/*.png
+!ProyectoBimestral/model/Warehouse/abandoned_warehouse_-_interior_scene/*.jpeg
+!ProyectoBimestral/model/Warehouse/abandoned_warehouse_-_interior_scene/textures/
 *.bmp
