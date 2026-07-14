@@ -89,12 +89,55 @@ const int   REPEATED_MODEL_COUNT = 4;            // 4 puntas de la X
 const float REPEATED_MODEL_RADIUS_FROM_TREE = 4.3f; // punto intermedio: deja paso libre sin quedar muy lejos
 
 // Temblor/sacudida de los zombies: saltos bruscos a un nuevo angulo cada
-// tanto (no una animacion suave), como un cuerpo roto/rigido. Se suma
-// un leve vaiven vertical continuo (respiracion superficial).
-const float ZOMBIE_TWITCH_YAW_DEG = 5.0f;      // cuanto puede "saltar" de angulo
-const float ZOMBIE_TWITCH_STEP_DURATION = 1.3f; // cada cuanto cambia el angulo
-const float ZOMBIE_TWITCH_BOB_AMOUNT = 0.025f;  // amplitud del vaiven vertical
-const float ZOMBIE_TWITCH_BOB_SPEED = 2.0f;
+// tanto (no una animacion suave), como un cuerpo roto/rigido. Subido
+// fuerte porque el modelo es solo el torso (sin cabeza/brazos separados
+// para animar aparte), asi que el movimiento del cuerpo completo tiene
+// que notarse por si solo.
+const float ZOMBIE_TWITCH_YAW_DEG = 22.0f;      // cuanto puede "saltar" de angulo
+const float ZOMBIE_TWITCH_STEP_DURATION = 0.9f; // cada cuanto cambia el angulo
+const float ZOMBIE_TWITCH_BOB_AMOUNT = 0.09f;   // amplitud del vaiven vertical
+const float ZOMBIE_TWITCH_BOB_SPEED = 2.4f;
+
+// Vaiven de POSICION (se tambalea en el lugar, no solo gira). El radio
+// se mantiene chico a proposito para no salirse del margen de colision
+// ya reservado al ubicarlo (REPEATED_MODEL_COLLISION_MARGIN).
+const float ZOMBIE_SWAY_RADIUS = 0.22f;
+const float ZOMBIE_SWAY_SPEED = 0.75f;
+
+// Inclinacion lateral tipo "a punto de caerse", ademas del giro
+const float ZOMBIE_LEAN_DEG = 8.0f;
+const float ZOMBIE_LEAN_SPEED = 0.55f;
+const glm::vec3 ZOMBIE_LEAN_AXIS = glm::vec3(0.0f, 0.0f, 1.0f); // ajustar a (1,0,0) si la inclinacion queda "para adelante/atras" en vez de "de lado"
+
+// -----------------------------------------------------------
+// Movimiento de cabeza y brazos: como el .obj no tiene huesos, esto solo
+// funciona si el modelo tiene la cabeza y los brazos como MALLAS
+// SEPARADAS (algo muy comun en modelos de Sketchfab). Se detectan
+// automaticamente por posicion relativa al resto del cuerpo:
+// - Cabeza: arriba de todo, cerca del centro horizontal.
+// - Brazo: a media altura, notablemente corrido del centro horizontal.
+// Si la deteccion falla, forzar a mano con manualZombieHeadMeshIndices /
+// manualZombieArmMeshIndices, mirando el listado "[ZOMBIE MESH i]" de
+// la consola. Si un eje de giro queda "para el lado que no es", ajustar
+// ZOMBIE_HEAD_SWAY_AXIS / ZOMBIE_ARM_SWING_AXIS (ej. de (1,0,0) a (0,0,1)).
+// -----------------------------------------------------------
+const bool  ZOMBIE_ANIMATE_PARTS = true;
+const float ZOMBIE_HEAD_HEIGHT_FRAC_MIN = 0.78f;  // debe estar en el 22% superior del cuerpo
+const float ZOMBIE_HEAD_MAX_OFFSET_FRAC = 0.3f;   // debe estar cerca del centro horizontal
+const float ZOMBIE_ARM_HEIGHT_FRAC_MIN = 0.35f;   // rango de altura tipo "hombro/brazo"
+const float ZOMBIE_ARM_HEIGHT_FRAC_MAX = 0.85f;
+const float ZOMBIE_ARM_MIN_OFFSET_FRAC = 0.28f;   // debe estar corrido del centro (no en el medio)
+
+const float ZOMBIE_HEAD_SWAY_DEG = 16.0f;
+const float ZOMBIE_HEAD_SWAY_SPEED = 0.9f;
+const glm::vec3 ZOMBIE_HEAD_SWAY_AXIS = glm::vec3(0.0f, 1.0f, 0.0f); // Y = girar la cabeza de lado a lado
+
+const float ZOMBIE_ARM_SWING_DEG = 28.0f;
+const float ZOMBIE_ARM_SWING_SPEED = 0.6f;
+const glm::vec3 ZOMBIE_ARM_SWING_AXIS = glm::vec3(1.0f, 0.0f, 0.0f); // X = subir/bajar el brazo hacia adelante
+
+std::vector<int> manualZombieHeadMeshIndices = { };
+std::vector<int> manualZombieArmMeshIndices = { };
 const float REPEATED_MODEL_COLLISION_MARGIN = 0.4f;
 const bool  REPEATED_MODEL_FACE_CENTER = true;   // gira cada instancia mirando hacia el arbol
 const float REPEATED_MODEL_YAW_OFFSET_DEG = 0.0f; // ajustar +-90/180 si quedan mirando al reves
@@ -981,8 +1024,17 @@ int main()
         float yawDeg;
         float scale;
     };
+    // type: 0 = torso/otro (no se anima aparte), 1 = cabeza, 2 = brazo.
+    // pivotLocal esta en espacio LOCAL del modelo (sin escalar), para
+    // poder rotar cada malla alrededor de su propio cuello/hombro.
+    struct ZombiePart {
+        int meshIndex;
+        int type;
+        glm::vec3 pivotLocal;
+    };
     Model* repeatedModel = nullptr;
     std::vector<RepeatedInstance> repeatedInstances;
+    std::vector<ZombiePart> zombieParts;
     if (ADD_REPEATED_MODEL)
     {
         repeatedModel = new Model(REPEATED_MODEL_PATH);
@@ -1002,6 +1054,56 @@ int main()
 
         std::cout << "[DEBUG] Modelo repetido cargado. Escala=" << repeatedScale
             << " (altura local=" << rHeight << " -> objetivo=" << REPEATED_MODEL_TARGET_HEIGHT << ")" << std::endl;
+
+        // -------------------- Clasificar mallas: cabeza / brazo / otro --------------------
+        if (ZOMBIE_ANIMATE_PARTS)
+        {
+            glm::vec3 overallCenter = (rmin + rmax) * 0.5f;
+            float halfWidth = (rmax.x - rmin.x) * 0.5f;
+            float totalHeight = rmax.y - rmin.y;
+
+            for (size_t m = 0; m < repeatedModel->meshes.size(); m++)
+            {
+                auto& verts = repeatedModel->meshes[m].vertices;
+                glm::vec3 mmin(FLT_MAX), mmax(-FLT_MAX);
+                for (auto& v : verts) {
+                    mmin = glm::min(mmin, v.Position);
+                    mmax = glm::max(mmax, v.Position);
+                }
+                glm::vec3 mCenter = (mmin + mmax) * 0.5f;
+                float heightFrac = (totalHeight > 0.0001f) ? (mCenter.y - rmin.y) / totalHeight : 0.0f;
+                float offsetXFrac = (halfWidth > 0.0001f) ? (mCenter.x - overallCenter.x) / halfWidth : 0.0f;
+
+                bool isHeadAuto = heightFrac > ZOMBIE_HEAD_HEIGHT_FRAC_MIN && fabsf(offsetXFrac) < ZOMBIE_HEAD_MAX_OFFSET_FRAC;
+                bool isArmAuto = heightFrac > ZOMBIE_ARM_HEIGHT_FRAC_MIN && heightFrac < ZOMBIE_ARM_HEIGHT_FRAC_MAX && fabsf(offsetXFrac) > ZOMBIE_ARM_MIN_OFFSET_FRAC;
+
+                bool manualHead = std::find(manualZombieHeadMeshIndices.begin(), manualZombieHeadMeshIndices.end(), (int)m) != manualZombieHeadMeshIndices.end();
+                bool manualArm = std::find(manualZombieArmMeshIndices.begin(), manualZombieArmMeshIndices.end(), (int)m) != manualZombieArmMeshIndices.end();
+
+                bool useAutoHead = manualZombieHeadMeshIndices.empty() && isHeadAuto;
+                bool useAutoArm = manualZombieArmMeshIndices.empty() && isArmAuto;
+
+                int type = 0;
+                glm::vec3 pivot = mCenter;
+                if (manualHead || useAutoHead)
+                {
+                    type = 1;
+                    pivot = glm::vec3(mCenter.x, mmin.y, mCenter.z); // pivote abajo (aprox. cuello)
+                }
+                else if (manualArm || useAutoArm)
+                {
+                    type = 2;
+                    pivot = glm::vec3(mCenter.x, mmax.y, mCenter.z); // pivote arriba (aprox. hombro)
+                }
+
+                if (PRINT_MESH_DEBUG)
+                    std::cout << "  [ZOMBIE MESH " << m << "] verts=" << verts.size()
+                    << " heightFrac=" << heightFrac << " offsetXFrac=" << offsetXFrac
+                    << (type == 1 ? "  -> CABEZA" : (type == 2 ? "  -> BRAZO" : "")) << std::endl;
+
+                zombieParts.push_back({ (int)m, type, pivot });
+            }
+        }
 
         for (int i = 0; i < REPEATED_MODEL_COUNT; i++)
         {
@@ -1350,7 +1452,9 @@ int main()
 
         // Modelos repetidos (misma malla cargada 1 vez, dibujada N veces
         // con distinta matriz) -- mismo shader, misma iluminacion. Cada
-        // instancia tiembla/se sacude de forma independiente.
+        // instancia tiembla/se sacude, y si se detectaron cabeza/brazos
+        // como mallas separadas, esas se rotan aparte alrededor de su
+        // propio pivote (cuello/hombro).
         if (repeatedModel)
         {
             for (size_t i = 0; i < repeatedInstances.size(); i++)
@@ -1365,19 +1469,62 @@ int main()
                 float twitchYaw = (twitchRoll - 0.5f) * 2.0f * ZOMBIE_TWITCH_YAW_DEG;
 
                 // Vaiven vertical leve y continuo (respiracion superficial)
-                float bobPhase = (float)i * 2.399963f;
-                float bobY = sinf(currentFrame * ZOMBIE_TWITCH_BOB_SPEED + bobPhase) * ZOMBIE_TWITCH_BOB_AMOUNT;
+                float instPhase = (float)i * 2.399963f;
+                float bobY = sinf(currentFrame * ZOMBIE_TWITCH_BOB_SPEED + instPhase) * ZOMBIE_TWITCH_BOB_AMOUNT;
 
-                glm::mat4 m = glm::translate(glm::mat4(1.0f), inst.worldPos + glm::vec3(0.0f, bobY, 0.0f));
-                m = glm::rotate(m, glm::radians(inst.yawDeg + twitchYaw), glm::vec3(0.0f, 1.0f, 0.0f));
+                // Vaiven de posicion: se tambalea en el lugar (radio chico,
+                // dentro del margen de colision ya reservado)
+                float swayX = sinf(currentFrame * ZOMBIE_SWAY_SPEED + instPhase) * ZOMBIE_SWAY_RADIUS;
+                float swayZ = cosf(currentFrame * ZOMBIE_SWAY_SPEED * 0.8f + instPhase) * ZOMBIE_SWAY_RADIUS * 0.6f;
+
+                // Inclinacion lateral tipo "a punto de caerse"
+                float leanDeg = sinf(currentFrame * ZOMBIE_LEAN_SPEED + instPhase * 1.3f) * ZOMBIE_LEAN_DEG;
+
+                glm::mat4 instanceMatrix = glm::translate(glm::mat4(1.0f), inst.worldPos + glm::vec3(swayX, bobY, swayZ));
+                instanceMatrix = glm::rotate(instanceMatrix, glm::radians(inst.yawDeg + twitchYaw), glm::vec3(0.0f, 1.0f, 0.0f));
+                instanceMatrix = glm::rotate(instanceMatrix, glm::radians(leanDeg), ZOMBIE_LEAN_AXIS);
                 if (REPEATED_MODEL_IS_Z_UP)
-                    m = glm::rotate(m, glm::radians(-90.0f), glm::vec3(1.0f, 0.0f, 0.0f));
-                m = glm::scale(m, glm::vec3(inst.scale));
+                    instanceMatrix = glm::rotate(instanceMatrix, glm::radians(-90.0f), glm::vec3(1.0f, 0.0f, 0.0f));
+                instanceMatrix = glm::scale(instanceMatrix, glm::vec3(inst.scale));
 
                 glActiveTexture(GL_TEXTURE0);
                 glBindTexture(GL_TEXTURE_2D, fallbackWhiteTex);
-                ourShader.setMat4("model", m);
-                repeatedModel->Draw(ourShader);
+
+                if (!zombieParts.empty())
+                {
+                    // Cabeza y brazos detectados: se dibuja malla por malla,
+                    // aplicando una rotacion extra SOLO a las partes clasificadas.
+                    for (auto& part : zombieParts)
+                    {
+                        glm::mat4 partLocal = glm::mat4(1.0f);
+
+                        if (part.type == 1) // cabeza: gira de lado a lado
+                        {
+                            float sway = sinf(currentFrame * ZOMBIE_HEAD_SWAY_SPEED + instPhase) * ZOMBIE_HEAD_SWAY_DEG;
+                            partLocal = glm::translate(glm::mat4(1.0f), part.pivotLocal);
+                            partLocal = glm::rotate(partLocal, glm::radians(sway), ZOMBIE_HEAD_SWAY_AXIS);
+                            partLocal = glm::translate(partLocal, -part.pivotLocal);
+                        }
+                        else if (part.type == 2) // brazo: sube y baja como shambling
+                        {
+                            float armPhase = instPhase + (float)part.meshIndex * 1.7f; // que no vayan igual
+                            float swing = ZOMBIE_ARM_SWING_DEG * (0.5f + 0.5f * sinf(currentFrame * ZOMBIE_ARM_SWING_SPEED + armPhase));
+                            partLocal = glm::translate(glm::mat4(1.0f), part.pivotLocal);
+                            partLocal = glm::rotate(partLocal, glm::radians(swing), ZOMBIE_ARM_SWING_AXIS);
+                            partLocal = glm::translate(partLocal, -part.pivotLocal);
+                        }
+
+                        ourShader.setMat4("model", instanceMatrix * partLocal);
+                        repeatedModel->meshes[part.meshIndex].Draw(ourShader);
+                    }
+                }
+                else
+                {
+                    // Respaldo: si no se pudo clasificar nada, se dibuja el
+                    // modelo completo de una sola vez (comportamiento anterior).
+                    ourShader.setMat4("model", instanceMatrix);
+                    repeatedModel->Draw(ourShader);
+                }
             }
         }
 
