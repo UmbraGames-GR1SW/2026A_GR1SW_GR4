@@ -39,15 +39,57 @@ const unsigned int SCR_WIDTH = 1280;
 const unsigned int SCR_HEIGHT = 720;
 
 // -----------------------------------------------------------
-// Modelo extra: se carga, escala y ubica en el centro del warehouse, a
-// nivel de piso, y se dibuja con el MISMO shader que el resto (hereda
-// linterna, luces rojas, niebla, grano, etc. automaticamente).
+// Modelo extra: se carga, escala y ubica cerca (no exacto) del centro
+// del warehouse, a nivel de piso, y se dibuja con el MISMO shader que
+// el resto (hereda linterna, luces rojas, niebla, grano, etc. solo).
 // -----------------------------------------------------------
 const bool ADD_EXTRA_MODEL = true;
 const std::string EXTRA_MODEL_PATH = "C:/Users/redin/source/repos/2026A_GR1SW_GR4/ProyectoBimestral/model/C_Tree/C_tree.obj";
 const float EXTRA_MODEL_TARGET_HEIGHT = 4.0f; // altura deseada en unidades de mundo, ajustable
 const bool  EXTRA_MODEL_IS_Z_UP = false;       // poner true si aparece "acostado"
 const bool  EXTRA_MODEL_ADD_COLLISION = true;  // false si no queres que bloquee el paso
+
+// 0.0 = centro exacto del edificio, 1.0 = justo en el punto de spawn.
+// Bajado para que quede mas cerca del centro real del edificio.
+const float EXTRA_MODEL_TOWARD_SPAWN_BLEND = 0.15f;
+// Margen extra sobre el radio estimado del arbol al buscar un lugar
+// libre -- evita que quede pegado o superpuesto a una silla/mesa.
+const float EXTRA_MODEL_COLLISION_MARGIN = 0.5f;
+
+// -----------------------------------------------------------
+// Bombillos de colores tipo arbol de navidad: se intenta usar los
+// bombillos REALES del modelo (mallas chicas y compactas, tipo esfera,
+// repartidas por el follaje), detectados automaticamente por tamano y
+// forma. Si algun bombillo real queda mal detectado, se puede forzar
+// a mano con manualOrnamentMeshIndices (mirando el listado de consola
+// "[ARBOL MESH i]"). Si no se detecta nada, cae a un reparto aleatorio
+// dentro del volumen del arbol como ultimo recurso.
+// -----------------------------------------------------------
+const bool  EXTRA_MODEL_ORNAMENT_LIGHTS = true;
+const int   ORNAMENT_LIGHT_COUNT = 10;          // tope de bombillos a usar (<= MAX_ORNAMENT_LIGHTS del shader)
+const float ORNAMENT_LIGHT_BASE_INTENSITY = 1.3f;
+const float ORNAMENT_LIGHT_BILLBOARD_SCALE = 0.22f;
+const float ORNAMENT_MAX_FOOTPRINT = 0.5f;      // una bombilla real es chica en las 3 dimensiones
+const float ORNAMENT_MAX_ASPECT_RATIO = 2.2f;   // descarta ramas/hojas alargadas
+std::vector<int> manualOrnamentMeshIndices = { };
+
+// -----------------------------------------------------------
+// Modelos repetidos alrededor del arbol, en forma de X (4 puntas). Se
+// carga el archivo UNA sola vez y se dibuja varias veces con distinta
+// matriz de posicion (mucho mas liviano que cargarlo N veces). Usa el
+// mismo shader que todo lo demas, asi que hereda linterna, luces
+// rojas, niebla, grano, etc. automaticamente.
+// -----------------------------------------------------------
+const bool  ADD_REPEATED_MODEL = true;
+const std::string REPEATED_MODEL_PATH = "C:/Users/redin/source/repos/2026A_GR1SW_GR4/ProyectoBimestral/model/Zombie_torso/Sin_nombre.obj";
+const float REPEATED_MODEL_TARGET_HEIGHT = 1.6f; // altura aproximada, ajustable
+const bool  REPEATED_MODEL_IS_Z_UP = false;
+const bool  REPEATED_MODEL_ADD_COLLISION = true;
+const int   REPEATED_MODEL_COUNT = 4;            // 4 puntas de la X
+const float REPEATED_MODEL_RADIUS_FROM_TREE = 6.5f; // distancia desde el arbol -- agrandado para dejar paso libre
+const float REPEATED_MODEL_COLLISION_MARGIN = 0.4f;
+const bool  REPEATED_MODEL_FACE_CENTER = true;   // gira cada instancia mirando hacia el arbol
+const float REPEATED_MODEL_YAW_OFFSET_DEG = 0.0f; // ajustar +-90/180 si quedan mirando al reves
 
 // ---------------------------------------------------------
 // Configuración de escala / jugador
@@ -301,6 +343,19 @@ CollisionGrid g_floorMask; // 1 = hay piso real debajo
 std::vector<glm::vec3> g_meshCenters;         // centro (mundo) de cada malla, indexado igual que model.meshes
 std::vector<int> g_autoDetectedLightIndices;  // indices de mallas candidatas a "foco de techo"
 std::vector<glm::vec3> g_redLightPositions;   // posiciones finales usadas por el shader
+
+std::vector<glm::vec3> g_ornamentLightPositions;
+std::vector<glm::vec3> g_ornamentLightColors;
+
+const glm::vec3 ORNAMENT_PALETTE[] = {
+    glm::vec3(1.0f, 0.12f, 0.10f), // rojo
+    glm::vec3(0.15f, 1.0f, 0.20f), // verde
+    glm::vec3(0.20f, 0.35f, 1.0f), // azul
+    glm::vec3(1.0f, 0.85f, 0.10f), // amarillo
+    glm::vec3(1.0f, 0.20f, 0.75f), // rosa/magenta
+    glm::vec3(0.15f, 0.95f, 0.95f) // cian
+};
+const int ORNAMENT_PALETTE_SIZE = 6;
 
 // -----------------------------------------------------------
 // Construye la grilla de colision recorriendo TODOS los triangulos
@@ -660,6 +715,22 @@ int main()
     glEnableVertexAttribArray(0);
     glBindVertexArray(0);
 
+    // -------------------- Textura de respaldo (1x1 blanca) --------------------
+    // Si un modelo/malla no trae textura de difuso cargada correctamente
+    // (archivo faltante, ruta mal referenciada en el .mtl, etc.), el
+    // shader terminaria multiplicando todo por negro. Bindeando esto
+    // ANTES de dibujar cada modelo, si la malla SI tiene su propia
+    // textura, la pisa sin problema (se ve normal); si no la tiene,
+    // al menos queda iluminada en blanco/gris en vez de negro puro.
+    unsigned int fallbackWhiteTex;
+    glGenTextures(1, &fallbackWhiteTex);
+    glBindTexture(GL_TEXTURE_2D, fallbackWhiteTex);
+    unsigned char whitePixel[3] = { 255, 255, 255 };
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, 1, 1, 0, GL_RGB, GL_UNSIGNED_BYTE, whitePixel);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+    glBindTexture(GL_TEXTURE_2D, 0);
+
     // -------------------- Carga del modelo --------------------
     Model ourModel("C:/Users/redin/source/repos/2026A_GR1SW_GR4/ProyectoBimestral/model/Warehouse/abandoned_warehouse_-_interior_scene/Sin_nombre.obj");
 
@@ -715,6 +786,10 @@ int main()
     // -------------------- Modelo extra (arbol), centrado y a nivel de piso --------------------
     Model* extraModel = nullptr;
     glm::mat4 extraModelMatrix = glm::mat4(1.0f);
+    // Punto de referencia (centro del arbol) para ubicar cosas alrededor
+    // de el, como los modelos repetidos en X. Si no hay arbol, cae al
+    // centro del edificio.
+    glm::vec2 treeAnchorXZ((g_worldAABB.min.x + g_worldAABB.max.x) * 0.5f, (g_worldAABB.min.z + g_worldAABB.max.z) * 0.5f);
     if (ADD_EXTRA_MODEL)
     {
         extraModel = new Model(EXTRA_MODEL_PATH);
@@ -733,10 +808,47 @@ int main()
         glm::vec2 buildingCenterXZ((g_worldAABB.min.x + g_worldAABB.max.x) * 0.5f, (g_worldAABB.min.z + g_worldAABB.max.z) * 0.5f);
         float floorY = g_worldAABB.min.y;
 
+        // Punto "hacia el spawn" (sin buscar aun lugar libre, solo la
+        // direccion): mezcla entre el centro del edificio y la esquina
+        // de spawn configurada mas arriba (SPAWN_X_FRAC / SPAWN_Z_FRAC).
+        glm::vec2 spawnApproxXZ(
+            g_worldAABB.min.x + SPAWN_X_FRAC * (g_worldAABB.max.x - g_worldAABB.min.x),
+            g_worldAABB.min.z + SPAWN_Z_FRAC * (g_worldAABB.max.z - g_worldAABB.min.z)
+        );
+        glm::vec2 targetXZ = glm::mix(buildingCenterXZ, spawnApproxXZ, EXTRA_MODEL_TOWARD_SPAWN_BLEND);
+
+        // Radio horizontal aproximado del arbol ya escalado, para no
+        // superponerlo con sillas/mesas ya marcadas como solidas.
+        float treeRadius = 0.5f * std::max(eSize.x, eSize.z) * extraScale + EXTRA_MODEL_COLLISION_MARGIN;
+
+        glm::vec2 finalXZ = targetXZ;
+        glm::vec3 testPos(targetXZ.x, floorY + 0.1f, targetXZ.y);
+        if (CollidesAt(testPos, treeRadius) || !HasFloorAt(testPos))
+        {
+            bool found = false;
+            for (int r = 1; r <= 60 && !found; r++)
+            {
+                float radius = r * (GRID_CELL_SIZE * 0.5f);
+                for (int a = 0; a < 16 && !found; a++)
+                {
+                    float angle = (2.0f * 3.14159265f * a) / 16;
+                    glm::vec2 candidate(targetXZ.x + cosf(angle) * radius, targetXZ.y + sinf(angle) * radius);
+                    glm::vec3 candidatePos(candidate.x, floorY + 0.1f, candidate.y);
+                    if (!CollidesAt(candidatePos, treeRadius) && HasFloorAt(candidatePos))
+                    {
+                        finalXZ = candidate;
+                        found = true;
+                    }
+                }
+            }
+            std::cout << "[DEBUG] Modelo extra reubicado para no chocar con muebles: (" << finalXZ.x << ", " << finalXZ.y << ")" << std::endl;
+        }
+        treeAnchorXZ = finalXZ;
+
         glm::vec3 worldPos(
-            buildingCenterXZ.x - localCenterXZ.x * extraScale,
+            finalXZ.x - localCenterXZ.x * extraScale,
             floorY - emin.y * extraScale,
-            buildingCenterXZ.y - localCenterXZ.y * extraScale
+            finalXZ.y - localCenterXZ.y * extraScale
         );
 
         extraModelMatrix = glm::translate(glm::mat4(1.0f), worldPos);
@@ -749,6 +861,199 @@ int main()
 
         if (EXTRA_MODEL_ADD_COLLISION)
             AddModelCollision(*extraModel, extraModelMatrix, floorY);
+
+        // -------------------- Bombillos de colores en el follaje --------------------
+        if (EXTRA_MODEL_ORNAMENT_LIGHTS)
+        {
+            // Recorremos cada malla del arbol y calculamos su AABB de mundo,
+            // para detectar cuales son "bombillos reales" (chicos y
+            // compactos, tipo esfera) en vez de ramas/hojas/tronco.
+            std::vector<glm::vec3> treeMeshCenters;
+            std::vector<int> treeOrnamentCandidates;
+
+            for (size_t m = 0; m < extraModel->meshes.size(); m++)
+            {
+                auto& tverts = extraModel->meshes[m].vertices;
+                glm::vec3 mmin(FLT_MAX), mmax(-FLT_MAX);
+                for (auto& v : tverts) {
+                    glm::vec3 wp = glm::vec3(extraModelMatrix * glm::vec4(v.Position, 1.0f));
+                    mmin = glm::min(mmin, wp);
+                    mmax = glm::max(mmax, wp);
+                }
+                glm::vec3 mCenter = (mmin + mmax) * 0.5f;
+                treeMeshCenters.push_back(mCenter);
+
+                float fx = mmax.x - mmin.x, fy = mmax.y - mmin.y, fz = mmax.z - mmin.z;
+                float footprint = std::max({ fx, fy, fz });
+                float minDim = std::max(std::min({ fx, fy, fz }), 0.001f);
+                float aspect = footprint / minDim;
+
+                bool isCandidate = footprint < ORNAMENT_MAX_FOOTPRINT && aspect < ORNAMENT_MAX_ASPECT_RATIO;
+                if (isCandidate)
+                    treeOrnamentCandidates.push_back((int)m);
+
+                if (PRINT_MESH_DEBUG)
+                    std::cout << "  [ARBOL MESH " << m << "] verts=" << tverts.size()
+                    << " size=(" << fx << ", " << fy << ", " << fz << ")"
+                    << (isCandidate ? "  -> CANDIDATO A BOMBILLO" : "") << std::endl;
+            }
+
+            g_ornamentLightPositions.clear();
+            g_ornamentLightColors.clear();
+
+            if (!manualOrnamentMeshIndices.empty())
+            {
+                for (int idx : manualOrnamentMeshIndices)
+                {
+                    if (idx >= 0 && idx < (int)treeMeshCenters.size())
+                    {
+                        g_ornamentLightPositions.push_back(treeMeshCenters[idx]);
+                        int colorIdx = (int)g_ornamentLightPositions.size() % ORNAMENT_PALETTE_SIZE;
+                        g_ornamentLightColors.push_back(ORNAMENT_PALETTE[colorIdx]);
+                    }
+                }
+                std::cout << "[DEBUG] Usando " << g_ornamentLightPositions.size() << " bombillo(s) definidos manualmente en manualOrnamentMeshIndices." << std::endl;
+            }
+            else if (!treeOrnamentCandidates.empty())
+            {
+                for (int idx : treeOrnamentCandidates)
+                {
+                    if ((int)g_ornamentLightPositions.size() >= ORNAMENT_LIGHT_COUNT) break;
+                    g_ornamentLightPositions.push_back(treeMeshCenters[idx]);
+                    int colorIdx = (int)g_ornamentLightPositions.size() % ORNAMENT_PALETTE_SIZE;
+                    g_ornamentLightColors.push_back(ORNAMENT_PALETTE[colorIdx]);
+                }
+                std::cout << "[DEBUG] " << treeOrnamentCandidates.size() << " candidato(s) a bombillo detectados automaticamente, usando "
+                    << g_ornamentLightPositions.size() << "." << std::endl;
+            }
+            else
+            {
+                // Respaldo: si no se detecto ningun bombillo real, repartimos
+                // puntos dentro del volumen del arbol (mejor que nada, pero
+                // pueden caer en huecos entre ramas -- avisa por consola).
+                glm::vec3 tmin(FLT_MAX), tmax(-FLT_MAX);
+                glm::vec3 corners[8] = {
+                    {emin.x, emin.y, emin.z}, {emax.x, emin.y, emin.z},
+                    {emin.x, emax.y, emin.z}, {emin.x, emin.y, emax.z},
+                    {emax.x, emax.y, emin.z}, {emax.x, emin.y, emax.z},
+                    {emin.x, emax.y, emax.z}, {emax.x, emax.y, emax.z},
+                };
+                for (auto& c : corners) {
+                    glm::vec3 wc = glm::vec3(extraModelMatrix * glm::vec4(c, 1.0f));
+                    tmin = glm::min(tmin, wc);
+                    tmax = glm::max(tmax, wc);
+                }
+                glm::vec3 treeCenter = (tmin + tmax) * 0.5f;
+                float halfWidth = (tmax.x - tmin.x) * 0.5f;
+                float halfDepth = (tmax.z - tmin.z) * 0.5f;
+
+                for (int i = 0; i < ORNAMENT_LIGHT_COUNT; i++)
+                {
+                    float heightFrac = 0.45f + PseudoRandom01((float)i * 13.7f + 1.0f) * 0.5f;
+                    float y = tmin.y + heightFrac * (tmax.y - tmin.y);
+                    float angle = PseudoRandom01((float)i * 29.3f + 2.0f) * 6.2831853f;
+                    float radiusFrac = 0.15f + PseudoRandom01((float)i * 41.1f + 3.0f) * 0.4f;
+                    float x = treeCenter.x + cosf(angle) * radiusFrac * halfWidth;
+                    float z = treeCenter.z + sinf(angle) * radiusFrac * halfDepth;
+
+                    g_ornamentLightPositions.push_back(glm::vec3(x, y, z));
+                    int colorIdx = (int)(PseudoRandom01((float)i * 53.7f + 4.0f) * ORNAMENT_PALETTE_SIZE) % ORNAMENT_PALETTE_SIZE;
+                    g_ornamentLightColors.push_back(ORNAMENT_PALETTE[colorIdx]);
+                }
+                std::cout << "[DEBUG] No se detecto ningun bombillo real: usando reparto aleatorio (revisar manualOrnamentMeshIndices si no queda bien)." << std::endl;
+            }
+
+            std::cout << "[DEBUG] Total bombillos activos: " << g_ornamentLightPositions.size() << std::endl;
+        }
+    }
+
+    // -------------------- Modelos repetidos en X alrededor del arbol --------------------
+    Model* repeatedModel = nullptr;
+    std::vector<glm::mat4> repeatedModelMatrices;
+    if (ADD_REPEATED_MODEL)
+    {
+        repeatedModel = new Model(REPEATED_MODEL_PATH);
+
+        glm::vec3 rmin(FLT_MAX), rmax(-FLT_MAX);
+        for (auto& mesh : repeatedModel->meshes)
+            for (auto& v : mesh.vertices) {
+                rmin = glm::min(rmin, v.Position);
+                rmax = glm::max(rmax, v.Position);
+            }
+        glm::vec3 rSize = rmax - rmin;
+        float rHeight = rSize.y;
+        float repeatedScale = (rHeight > 0.0001f) ? (REPEATED_MODEL_TARGET_HEIGHT / rHeight) : 1.0f;
+        glm::vec2 rLocalCenterXZ((rmin.x + rmax.x) * 0.5f, (rmin.z + rmax.z) * 0.5f);
+        float rFootprintRadius = 0.5f * std::max(rSize.x, rSize.z) * repeatedScale + REPEATED_MODEL_COLLISION_MARGIN;
+        float floorY = g_worldAABB.min.y;
+
+        std::cout << "[DEBUG] Modelo repetido cargado. Escala=" << repeatedScale
+            << " (altura local=" << rHeight << " -> objetivo=" << REPEATED_MODEL_TARGET_HEIGHT << ")" << std::endl;
+
+        for (int i = 0; i < REPEATED_MODEL_COUNT; i++)
+        {
+            // Angulos de una X: 45, 135, 225, 315 grados (si se piden mas
+            // de 4, se reparten parejo alrededor del circulo completo).
+            float angle = (REPEATED_MODEL_COUNT == 4)
+                ? glm::radians(45.0f + 90.0f * i)
+                : (2.0f * 3.14159265f * i) / REPEATED_MODEL_COUNT;
+
+            glm::vec2 targetXZ(
+                treeAnchorXZ.x + cosf(angle) * REPEATED_MODEL_RADIUS_FROM_TREE,
+                treeAnchorXZ.y + sinf(angle) * REPEATED_MODEL_RADIUS_FROM_TREE
+            );
+
+            // Buscamos un punto libre cerca del objetivo (no chocar con
+            // sillas/mesas ni con el arbol ni con instancias previas, ya
+            // que cada una agrega su colision antes de ubicar la siguiente).
+            glm::vec2 finalRXZ = targetXZ;
+            glm::vec3 testPos(targetXZ.x, floorY + 0.1f, targetXZ.y);
+            if (CollidesAt(testPos, rFootprintRadius) || !HasFloorAt(testPos))
+            {
+                bool found = false;
+                for (int r = 1; r <= 60 && !found; r++)
+                {
+                    float radius = r * (GRID_CELL_SIZE * 0.5f);
+                    for (int a = 0; a < 16 && !found; a++)
+                    {
+                        float a2 = (2.0f * 3.14159265f * a) / 16;
+                        glm::vec2 candidate(targetXZ.x + cosf(a2) * radius, targetXZ.y + sinf(a2) * radius);
+                        glm::vec3 candidatePos(candidate.x, floorY + 0.1f, candidate.y);
+                        if (!CollidesAt(candidatePos, rFootprintRadius) && HasFloorAt(candidatePos))
+                        {
+                            finalRXZ = candidate;
+                            found = true;
+                        }
+                    }
+                }
+            }
+
+            glm::vec3 worldPos(
+                finalRXZ.x - rLocalCenterXZ.x * repeatedScale,
+                floorY - rmin.y * repeatedScale,
+                finalRXZ.y - rLocalCenterXZ.y * repeatedScale
+            );
+
+            glm::mat4 m = glm::translate(glm::mat4(1.0f), worldPos);
+
+            if (REPEATED_MODEL_FACE_CENTER)
+            {
+                glm::vec2 toCenter = glm::normalize(treeAnchorXZ - finalRXZ);
+                float yawDeg = glm::degrees(atan2f(toCenter.x, toCenter.y)) + REPEATED_MODEL_YAW_OFFSET_DEG;
+                m = glm::rotate(m, glm::radians(yawDeg), glm::vec3(0.0f, 1.0f, 0.0f));
+            }
+            if (REPEATED_MODEL_IS_Z_UP)
+                m = glm::rotate(m, glm::radians(-90.0f), glm::vec3(1.0f, 0.0f, 0.0f));
+
+            m = glm::scale(m, glm::vec3(repeatedScale));
+
+            repeatedModelMatrices.push_back(m);
+
+            if (REPEATED_MODEL_ADD_COLLISION)
+                AddModelCollision(*repeatedModel, m, floorY);
+
+            std::cout << "[DEBUG] Instancia " << i << " del modelo repetido en (" << finalRXZ.x << ", " << finalRXZ.y << ")" << std::endl;
+        }
     }
 
     // -------------------- Spawn de la cámara --------------------
@@ -974,6 +1279,25 @@ int main()
             ourShader.setFloat("redLightIntensities[" + std::to_string(i) + "]", perLightIntensity[i]);
         }
 
+        // Bombillos de colores del arbol: parpadeo tipo "luces de navidad"
+        // (bloques de brillo que cambian cada tanto, no un fundido suave),
+        // cada uno con su propio desfase para que no titilen sincronizados.
+        std::vector<float> ornamentIntensity(g_ornamentLightPositions.size());
+        for (size_t i = 0; i < g_ornamentLightPositions.size(); i++)
+        {
+            float step = floorf(currentFrame * 2.2f + (float)i * 1.37f);
+            float roll = PseudoRandom01(step * 3.71f + (float)i * 57.3f);
+            float twinkle = 0.25f + 0.75f * roll;
+            ornamentIntensity[i] = ORNAMENT_LIGHT_BASE_INTENSITY * twinkle;
+        }
+        ourShader.setInt("numOrnamentLights", (int)g_ornamentLightPositions.size());
+        for (size_t i = 0; i < g_ornamentLightPositions.size(); i++)
+        {
+            ourShader.setVec3("ornamentLightPositions[" + std::to_string(i) + "]", g_ornamentLightPositions[i]);
+            ourShader.setVec3("ornamentLightColors[" + std::to_string(i) + "]", g_ornamentLightColors[i]);
+            ourShader.setFloat("ornamentLightIntensities[" + std::to_string(i) + "]", ornamentIntensity[i]);
+        }
+
         // Niebla, vineta y gradacion de color
         ourShader.setVec3("fogColor", FOG_COLOR);
         ourShader.setFloat("fogDensity", FOG_DENSITY);
@@ -991,6 +1315,11 @@ int main()
             : 0.0f;
         ourShader.setFloat("startleFlash", startleFlash);
 
+        // Textura de respaldo: si alguna malla no trae la suya propia
+        // cargada, esto evita que quede negra. Cada Draw() la pisa con
+        // la textura real si la malla si la tiene.
+        glActiveTexture(GL_TEXTURE0);
+        glBindTexture(GL_TEXTURE_2D, fallbackWhiteTex);
         ourModel.Draw(ourShader);
 
         // El modelo extra usa el MISMO shader ya configurado este frame
@@ -998,8 +1327,23 @@ int main()
         // la matriz "model" para ubicarlo en su lugar.
         if (extraModel)
         {
+            glActiveTexture(GL_TEXTURE0);
+            glBindTexture(GL_TEXTURE_2D, fallbackWhiteTex);
             ourShader.setMat4("model", extraModelMatrix);
             extraModel->Draw(ourShader);
+        }
+
+        // Modelos repetidos (misma malla cargada 1 vez, dibujada N veces
+        // con distinta matriz) -- mismo shader, misma iluminacion.
+        if (repeatedModel)
+        {
+            for (auto& m : repeatedModelMatrices)
+            {
+                glActiveTexture(GL_TEXTURE0);
+                glBindTexture(GL_TEXTURE_2D, fallbackWhiteTex);
+                ourShader.setMat4("model", m);
+                repeatedModel->Draw(ourShader);
+            }
         }
 
         // -------- Bombillas visibles en cada foco de techo --------
@@ -1026,6 +1370,16 @@ int main()
         {
             bulbShader.setVec3("billboardCenter", g_redLightPositions[i]);
             bulbShader.setFloat("billboardIntensity", perLightIntensity[i] * 1.3f);
+            glDrawArrays(GL_TRIANGLES, 0, 6);
+        }
+
+        // -------- Bombillos de colores del arbol (cada uno con su color) --------
+        bulbShader.setFloat("billboardScale", ORNAMENT_LIGHT_BILLBOARD_SCALE);
+        for (size_t i = 0; i < g_ornamentLightPositions.size(); i++)
+        {
+            bulbShader.setVec3("billboardColor", g_ornamentLightColors[i]);
+            bulbShader.setVec3("billboardCenter", g_ornamentLightPositions[i]);
+            bulbShader.setFloat("billboardIntensity", ornamentIntensity[i] * 1.3f);
             glDrawArrays(GL_TRIANGLES, 0, 6);
         }
         glBindVertexArray(0);

@@ -1,5 +1,6 @@
 #version 330 core
 #define MAX_RED_LIGHTS 9
+#define MAX_ORNAMENT_LIGHTS 10
 
 out vec4 FragColor;
 
@@ -19,6 +20,12 @@ uniform vec3 redLightPositions[MAX_RED_LIGHTS];
 uniform float redLightIntensities[MAX_RED_LIGHTS];
 uniform int numRedLights;
 uniform vec3 redLightColor;
+
+// Bombillos de colores del arbol: cada uno con su propio color e intensidad
+uniform vec3 ornamentLightPositions[MAX_ORNAMENT_LIGHTS];
+uniform vec3 ornamentLightColors[MAX_ORNAMENT_LIGHTS];
+uniform float ornamentLightIntensities[MAX_ORNAMENT_LIGHTS];
+uniform int numOrnamentLights;
 
 uniform float materialShininess;
 
@@ -94,7 +101,28 @@ void main()
     float redSuppression = 1.0 - clamp(flashlightLuma * 1.4, 0.0, 0.85);
     red *= redSuppression;
 
-    vec3 result = neutral + red;
+    // Bombillos de colores del arbol: pequenos, rango corto, cada uno con
+    // su propio color -- se suman sin supresion (son acentos decorativos,
+    // no compiten con la linterna de la misma manera que el rojo del techo).
+    vec3 ornaments = vec3(0.0);
+    for (int i = 0; i < numOrnamentLights; i++)
+    {
+        vec3 toLight = ornamentLightPositions[i] - FragPos;
+        float dist = length(toLight);
+        vec3 lightDir = toLight / max(dist, 0.001);
+
+        float diff = max(dot(norm, lightDir), 0.2);
+        vec3 halfwayDir = normalize(lightDir + viewDir);
+        float spec = pow(max(dot(norm, halfwayDir), 0.0), materialShininess);
+
+        // Rango corto: son bombillos chicos, no deben iluminar todo el cuarto
+        float attenuation = 1.0 / (1.0 + 0.6 * dist + 0.9 * dist * dist);
+
+        vec3 contribution = (diff * texColor + vec3(spec) * 0.5) * attenuation * ornamentLightIntensities[i];
+        ornaments += ornamentLightColors[i] * contribution;
+    }
+
+    vec3 result = neutral + red + ornaments;
 
     float fogFactor = 1.0 - exp(-fogDensity * flDistance * flDistance);
     fogFactor = clamp(fogFactor, 0.0, 1.0);

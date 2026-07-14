@@ -1,0 +1,11 @@
+Model Information:
+* title:	Classic Zombie Torso | Half-Life 2
+* source:	https://sketchfab.com/3d-models/classic-zombie-torso-half-life-2-378e30373eea400fb29cf68ac12fcd67
+* author:	RedRomb (https://sketchfab.com/dvrager)
+
+Model License:
+* license type:	CC-BY-4.0 (http://creativecommons.org/licenses/by/4.0/)
+* requirements:	Author must be credited. Commercial use is allowed.
+
+If you use this 3D model in your project be sure to copy paste this credit wherever you share it:
+This work is based on "Classic Zombie Torso | Half-Life 2" (https://sketchfab.com/3d-models/classic-zombie-torso-half-life-2-378e30373eea400fb29cf68ac12fcd67) by RedRomb (https://sketchfab.com/dvrager) licensed under CC-BY-4.0 (http://creativecommons.org/licenses/by/4.0/)
