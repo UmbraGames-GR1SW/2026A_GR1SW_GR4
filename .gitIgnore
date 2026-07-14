@@ -181,27 +181,17 @@ publish/
 # Publish Web Output
 *.[Pp]ublish.xml
 *.azurePubxml
-# Note: Comment the next line if you want to checkin your web deploy settings,
-# but database connection strings (with potential passwords) will be unencrypted
 *.pubxml
 *.publishproj
 
-# Microsoft Azure Web App publish settings. Comment the next line if you want to
-# checkin your Azure Web App publish settings, but sensitive information contained
-# in these scripts will be unencrypted
+# Microsoft Azure Web App publish settings
 PublishScripts/
 
 # NuGet Packages
 *.nupkg
-# NuGet Symbol Packages
 *.snupkg
-# The packages folder can be ignored because of Package Restore
 **/[Pp]ackages/*
-# except build/, which is used as an MSBuild target.
 !**/[Pp]ackages/build/
-# Uncomment if necessary however generally it will be regenerated when needed
-#!**/[Pp]ackages/repositories.config
-# NuGet v3's project.json files produces more ignorable files
 *.nuget.props
 *.nuget.targets
 
@@ -223,9 +213,7 @@ _pkginfo.txt
 *.appxupload
 
 # Visual Studio cache files
-# files ending in .cache can be ignored
 *.[Cc]ache
-# but keep track of directories ending in .cache
 !?*.[Cc]ache/
 
 # Others
@@ -239,20 +227,7 @@ ClientBin/
 *.publishsettings
 orleans.codegen.cs
 
-# Including strong name files can present a security risk
-# (https://github.com/github/gitignore/pull/2483#issue-259490424)
-#*.snk
-
-# Since there are multiple workflows, uncomment next line to ignore bower_components
-# (https://github.com/github/gitignore/pull/1529#issuecomment-104372622)
-#bower_components/
-
-# RIA/Silverlight projects
-Generated_Code/
-
-# Backup & report files from converting an old project file
-# to a newer Visual Studio version. Backup files are not needed,
-# because we have git ;-)
+# Backup & report files
 _UpgradeReport_Files/
 Backup*/
 UpgradeLog*.XML
@@ -270,9 +245,6 @@ ServiceFabricBackup/
 *.bim.layout
 *.bim_*.settings
 *.rptproj.rsuser
-*- [Bb]ackup.rdl
-*- [Bb]ackup ([0-9]).rdl
-*- [Bb]ackup ([0-9][0-9]).rdl
 
 # Microsoft Fakes
 FakesAssemblies/
@@ -284,16 +256,12 @@ FakesAssemblies/
 .ntvs_analysis.dat
 node_modules/
 
-# Visual Studio 6 build log
+# Visual Studio 6 legacy
 *.plg
-
-# Visual Studio 6 workspace options file
 *.opt
-
-# Visual Studio 6 auto-generated workspace file (contains which files were open etc.)
 *.vbw
 
-# Visual Studio LightSwitch build output
+# LightSwitch
 **/*.HTMLClient/GeneratedArtifacts
 **/*.DesktopClient/GeneratedArtifacts
 **/*.DesktopClient/ModelManifest.xml
@@ -301,64 +269,60 @@ node_modules/
 **/*.Server/ModelManifest.xml
 _Pvt_Extensions
 
-# Paket dependency manager
+# Paket
 .paket/paket.exe
 paket-files/
 
-# FAKE - F# Make
+# FAKE
 .fake/
 
-# CodeRush personal settings
+# CodeRush
 .cr/personal
 
-# Python Tools for Visual Studio (PTVS)
+# Python Tools
 __pycache__/
 *.pyc
-
-# Cake - Uncomment if you are using it
-# tools/**
-# !tools/packages.config
 
 # Tabs Studio
 *.tss
 
-# Telerik's JustMock configuration file
+# Telerik JustMock
 *.jmconfig
 
-# BizTalk build output
+# BizTalk
 *.btp.cs
 *.btm.cs
 *.odx.cs
 *.xsd.cs
 
-# OpenCover UI analysis results
+# OpenCover
 OpenCover/
 
-# Azure Stream Analytics local run output
+# Azure Stream Analytics
 ASALocalRun/
 
-# MSBuild Binary and Structured Log
+# MSBuild logs
 *.binlog
 
-# NVidia Nsight GPU debugger configuration file
+# NVidia Nsight
 *.nvuser
 
-# MFractors (Xamarin productivity tool) working folder
+# MFractors
 .mfractor/
 
-# Local History for Visual Studio
+# Local History
 .localhistory/
 
-# BeatPulse healthcheck temp database
+# BeatPulse
 healthchecksdb
 
-# Backup folder for Package Reference Convert tool in Visual Studio 2017
+# Migration Backup
 MigrationBackup/
 
-# Ionide (cross platform F# VS Code tools) working folder
+# Ionide
 .ionide/
 
-# Fody - auto-generated XML schema
+# Fody
 FodyWeavers.xsd
 
 .vs/
@@ -374,7 +338,7 @@ Release/
 # OpenGL & C++ Custom Assets / Dependencies Settings
 # =========================================================================
 
-# Formatos de modelos 3D y texturas pesadas (comunes en OpenGL)
+# Ignorar por defecto modelos y texturas
 *.obj
 *.mtl
 *.fbx
@@ -383,9 +347,14 @@ Release/
 *.glb
 *.png
 *.jpg
+*.jpeg
 *.tga
 *.bmp
 
-# Permitir todos los modelos y texturas dentro de la carpeta model/
-!/ProyectoBimestral/model/**
-!/ProyectoBimestral/model/**/
+# PERMITIR todos los modelos y texturas dentro de ProyectoBimestral/model/
+!ProyectoBimestral/model/**/*.obj
+!ProyectoBimestral/model/**/*.mtl
+!ProyectoBimestral/model/**/*.png
+!ProyectoBimestral/model/**/*.jpg
+!ProyectoBimestral/model/**/*.jpeg
+!ProyectoBimestral/model/**/*.bmp
