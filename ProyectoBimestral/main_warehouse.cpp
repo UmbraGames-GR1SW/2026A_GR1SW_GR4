@@ -176,6 +176,10 @@ const float LIGHT_BULB_SCALE = 0.6f;
 // bien saturado -- asi el rojo resalta mucho mas contra todo lo demas.
 const float DESATURATION_AMOUNT = 0.55f;
 
+// Brillo especular: mas alto = destellos mas chicos y nitidos (superficie
+// muy lisa/metalica/mojada); mas bajo = brillo mas difuso y amplio.
+const float MATERIAL_SHININESS = 24.0f;
+
 // Indices de malla a excluir por completo de la colision (por ejemplo
 // una lampara colgante, cables, o el "shell" exterior/techo si genera
 // falsos positivos). Se llenan mirando la consola si algo bloquea mal.
@@ -789,6 +793,7 @@ int main()
         ourShader.setFloat("fogDensity", FOG_DENSITY);
         ourShader.setVec2("screenSize", glm::vec2((float)SCR_WIDTH, (float)SCR_HEIGHT));
         ourShader.setFloat("desaturation", DESATURATION_AMOUNT);
+        ourShader.setFloat("materialShininess", MATERIAL_SHININESS);
 
         ourModel.Draw(ourShader);
 

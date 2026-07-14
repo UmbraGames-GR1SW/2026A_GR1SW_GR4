@@ -23,6 +23,9 @@ uniform float redLightIntensities[MAX_RED_LIGHTS];
 uniform int numRedLights;
 uniform vec3 redLightColor;
 
+// Material: que tan "brilloso/mojado" se ve todo bajo las luces
+uniform float materialShininess;
+
 // Niebla: come la visibilidad lejana
 uniform vec3 fogColor;
 uniform float fogDensity;
@@ -38,21 +41,32 @@ void main()
 {
     vec3 texColor = texture(texture_diffuse1, TexCoords).rgb;
     vec3 norm = normalize(Normal);
+    vec3 viewDir = normalize(viewPos - FragPos);
 
-    // --- Parte "neutra": ambiente casi nulo + linterna ---
+    // --- Parte "neutra": ambiente casi nulo + linterna (difusa + especular) ---
     vec3 ambient = 0.02 * texColor;
 
-    vec3 flDir = normalize(viewPos - FragPos);
-    float flDiff = max(dot(norm, flDir), 0.0);
+    // Para la linterna, la luz sale de la MISMA posicion que la camara,
+    // asi que lightDir y viewDir son el mismo vector. El especular igual
+    // funciona: crea un lobulo mucho mas angosto que la difusa, dando un
+    // brillo/destello notorio en superficies lisas (metal, charcos, vidrio).
+    vec3 flLightDir = viewDir;
+    float flDiff = max(dot(norm, flLightDir), 0.0);
 
-    float theta = dot(flDir, normalize(-flashlightDir));
+    vec3 flHalfway = normalize(flLightDir + viewDir); // == flLightDir en este caso, pero se deja explicito
+    float flSpec = pow(max(dot(norm, flHalfway), 0.0), materialShininess);
+
+    float theta = dot(flLightDir, normalize(-flashlightDir));
     float epsilon = flashlightCutOff - flashlightOuterCutOff;
     float spotIntensity = clamp((theta - flashlightOuterCutOff) / epsilon, 0.0, 1.0);
 
     float flDistance = length(viewPos - FragPos);
     float flAttenuation = 1.0 / (1.0 + 0.09 * flDistance + 0.032 * flDistance * flDistance);
 
-    vec3 flashlightContribution = flDiff * texColor * flAttenuation * spotIntensity * flashlightFlicker * 1.8;
+    vec3 flDiffuseTerm = flDiff * texColor;
+    vec3 flSpecularTerm = vec3(flSpec) * 0.6; // blanco, no depende de la textura (brillo especular puro)
+
+    vec3 flashlightContribution = (flDiffuseTerm * 1.8 + flSpecularTerm) * flAttenuation * spotIntensity * flashlightFlicker;
 
     vec3 neutral = ambient + flashlightContribution;
 
@@ -60,22 +74,31 @@ void main()
     float luma = dot(neutral, vec3(0.299, 0.587, 0.114));
     neutral = mix(neutral, vec3(luma), desaturation);
 
-    // --- Parte roja: focos de techo, cada uno con su propia intensidad ---
-    vec3 redTotal = vec3(0.0);
+    // --- Parte roja: focos de techo, difusa + especular, cada uno con su propia intensidad ---
+    vec3 redDiffuseTotal = vec3(0.0);
+    vec3 redSpecularTotal = vec3(0.0);
     for (int i = 0; i < numRedLights; i++)
     {
         vec3 toLight = redLightPositions[i] - FragPos;
         float dist = length(toLight);
         vec3 lightDir = toLight / max(dist, 0.001);
 
-        float diff = max(dot(norm, lightDir), 0.0);
-        // Atenuacion fuerte: cada foco ilumina una zona limitada debajo
-        // suyo, como una lampara real de techo, no todo el cuarto parejo.
-        float attenuation = 1.0 / (1.0 + 0.28 * dist + 0.13 * dist * dist);
+        // Piso minimo de 0.12: aunque la superficie no mire directo a la
+        // lampara, sigue recibiendo un toque de rojo -- asi el efecto se
+        // "lee" claramente en vez de desaparecer en superficies de perfil.
+        float diff = max(dot(norm, lightDir), 0.12);
 
-        redTotal += diff * attenuation * texColor * redLightIntensities[i];
+        vec3 halfwayDir = normalize(lightDir + viewDir);
+        float spec = pow(max(dot(norm, halfwayDir), 0.0), materialShininess);
+
+        // Atenuacion mas suave que antes: el charco de luz se nota desde
+        // mas lejos, sin llegar a banar todo el cuarto parejo.
+        float attenuation = 1.0 / (1.0 + 0.14 * dist + 0.05 * dist * dist);
+
+        redDiffuseTotal += diff * attenuation * texColor * redLightIntensities[i];
+        redSpecularTotal += spec * attenuation * redLightIntensities[i] * 0.5;
     }
-    vec3 red = redLightColor * redTotal;
+    vec3 red = redLightColor * redDiffuseTotal + redLightColor * redSpecularTotal;
 
     vec3 result = neutral + red;
 
