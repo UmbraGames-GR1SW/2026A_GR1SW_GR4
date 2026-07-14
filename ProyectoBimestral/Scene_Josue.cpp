@@ -108,6 +108,12 @@ namespace Josue {
         glfwSetScrollCallback(window, scroll_callback);
         glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
 
+        // Obtener tamaño actual de la ventana
+        int width, height;
+        glfwGetFramebufferSize(window, &width, &height);
+        SCR_WIDTH = width;
+        SCR_HEIGHT = height;
+
         // Reiniciar variables de estado locales
         gameState = PLAYING;
         stateTimer = 0.0f;
@@ -120,10 +126,6 @@ namespace Josue {
         ambientPlayed = false;
         screamPlayed = false;
 
-        int width, height;
-        glfwGetFramebufferSize(window, &width, &height);
-        SCR_WIDTH = width;
-        SCR_HEIGHT = height;
 
         // --- INICIALIZAR AUDIO ---
         initaudio();

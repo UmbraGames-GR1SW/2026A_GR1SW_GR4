@@ -33,7 +33,7 @@ int main()
 #endif
 
     // Crear la ventana principal de la simulación
-    GLFWwindow* window = glfwCreateWindow(1280, 720, "El Pabellon 9 - Simulador de Recuerdos", NULL, NULL);
+    GLFWwindow* window = glfwCreateWindow(1920, 1080, "El Pabellon 9 - Simulador de Recuerdos", NULL, NULL);
     if (window == NULL)
     {
         std::cout << "Error al crear la ventana GLFW" << std::endl;

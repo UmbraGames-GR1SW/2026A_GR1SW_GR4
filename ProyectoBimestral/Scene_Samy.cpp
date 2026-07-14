@@ -152,6 +152,12 @@ namespace Samy {
         glfwSetScrollCallback(window, scroll_callback);
         glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
 
+        // Obtener tamaño actual de la ventana
+        int width, height;
+        glfwGetFramebufferSize(window, &width, &height);
+        SCR_WIDTH = width;
+        SCR_HEIGHT = height;
+
         // Reiniciar variables de estado para cuando volvamos a entrar
         camera = Camera(glm::vec3(0.69f, 0.88f, 0.38f));
         firstMouse = true;

@@ -14,12 +14,13 @@ extern SceneType g_CurrentScene;
 extern SceneType g_NextScene;
 
 namespace Pasillo {
-    static unsigned int SCR_WIDTH = 1280;
-    static unsigned int SCR_HEIGHT = 720;
+    static unsigned int SCR_WIDTH = 1920;
+    static unsigned int SCR_HEIGHT = 1080;
 
-    static Camera camera(glm::vec3(0.0f, 1.2f, 5.0f));
-    static float lastX = 1280.0f / 2.0f;
-    static float lastY = 720.0f / 2.0f;
+    // Posición inicial dentro del pasillo (X en [0, 35], Z en [-4.3, -0.4])
+    static Camera camera(glm::vec3(3.0f, 1.2f, -2.3f));
+    static float lastX = 1920.0f / 2.0f;
+    static float lastY = 1080.0f / 2.0f;
     static bool firstMouse = true;
 
     static float deltaTime = 0.0f;
@@ -61,14 +62,14 @@ namespace Pasillo {
         if (glfwGetKey(window, GLFW_KEY_ESCAPE) == GLFW_PRESS)
             glfwSetWindowShouldClose(window, true);
 
-        // Movimiento con flechas de dirección para evitar conflictos con WASD
-        if (glfwGetKey(window, GLFW_KEY_UP) == GLFW_PRESS)
+        // Movimiento con WASD
+        if (glfwGetKey(window, GLFW_KEY_W) == GLFW_PRESS)
             camera.ProcessKeyboard(FORWARD, deltaTime);
-        if (glfwGetKey(window, GLFW_KEY_DOWN) == GLFW_PRESS)
+        if (glfwGetKey(window, GLFW_KEY_S) == GLFW_PRESS)
             camera.ProcessKeyboard(BACKWARD, deltaTime);
-        if (glfwGetKey(window, GLFW_KEY_LEFT) == GLFW_PRESS)
+        if (glfwGetKey(window, GLFW_KEY_A) == GLFW_PRESS)
             camera.ProcessKeyboard(LEFT, deltaTime);
-        if (glfwGetKey(window, GLFW_KEY_RIGHT) == GLFW_PRESS)
+        if (glfwGetKey(window, GLFW_KEY_D) == GLFW_PRESS)
             camera.ProcessKeyboard(RIGHT, deltaTime);
 
         // Control de linterna
@@ -85,14 +86,14 @@ namespace Pasillo {
             fKeyPressedLastFrame = false;
         }
 
-        // Teclas para viajar a otras escenas (recuerdos)
-        if (glfwGetKey(window, GLFW_KEY_S) == GLFW_PRESS)
+        // Teclas para viajar a otras escenas (recuerdos) sin conflicto con WASD
+        if (glfwGetKey(window, GLFW_KEY_1) == GLFW_PRESS || glfwGetKey(window, GLFW_KEY_G) == GLFW_PRESS)
             g_NextScene = SCENE_SAMY;
-        if (glfwGetKey(window, GLFW_KEY_A) == GLFW_PRESS)
+        if (glfwGetKey(window, GLFW_KEY_2) == GLFW_PRESS || glfwGetKey(window, GLFW_KEY_I) == GLFW_PRESS)
             g_NextScene = SCENE_ANI;
-        if (glfwGetKey(window, GLFW_KEY_T) == GLFW_PRESS)
+        if (glfwGetKey(window, GLFW_KEY_3) == GLFW_PRESS || glfwGetKey(window, GLFW_KEY_T) == GLFW_PRESS)
             g_NextScene = SCENE_MATTHEW;
-        if (glfwGetKey(window, GLFW_KEY_J) == GLFW_PRESS)
+        if (glfwGetKey(window, GLFW_KEY_4) == GLFW_PRESS || glfwGetKey(window, GLFW_KEY_J) == GLFW_PRESS)
             g_NextScene = SCENE_JOSUE;
     }
 
@@ -102,6 +103,12 @@ namespace Pasillo {
         glfwSetFramebufferSizeCallback(window, framebuffer_size_callback);
         glfwSetCursorPosCallback(window, mouse_callback);
         glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
+
+        // Obtener tamaño actual de la ventana
+        int width, height;
+        glfwGetFramebufferSize(window, &width, &height);
+        SCR_WIDTH = width;
+        SCR_HEIGHT = height;
 
         // Shaders
         Shader ourShader("shaders/Vertex_Samy.vs", "shaders/Fragment_Samy.fs");
@@ -113,8 +120,8 @@ namespace Pasillo {
         // Cargar fuentes
         InitFreeType("fonts/arial.ttf");
 
-        // Reiniciar estado local
-        camera = Camera(glm::vec3(0.0f, 1.2f, 5.0f), glm::vec3(0.0f, 1.0f, 0.0f), -90.0f, 0.0f);
+        // Reiniciar estado de cámara apuntando por el pasillo (Yaw = 0.0f)
+        camera = Camera(glm::vec3(3.0f, 1.2f, -2.3f), glm::vec3(0.0f, 1.0f, 0.0f), 0.0f, 0.0f);
         firstMouse = true;
         lastFrame = static_cast<float>(glfwGetTime());
 
@@ -181,9 +188,9 @@ namespace Pasillo {
             float sw = static_cast<float>(SCR_WIDTH);
             float sh = static_cast<float>(SCR_HEIGHT);
             RenderText(textShader, "EL PABELLON 9 - RECUERDO SEPULTADO", 50.0f, sh - 60.0f, 0.6f, glm::vec3(0.8f, 0.8f, 0.9f), sw, sh);
-            RenderText(textShader, "Muevase con las FLECHAS. Presione F para Linterna.", 50.0f, sh - 100.0f, 0.45f, glm::vec3(0.6f, 0.6f, 0.6f), sw, sh);
+            RenderText(textShader, "Muevase con WASD. Presione F para Linterna.", 50.0f, sh - 100.0f, 0.45f, glm::vec3(0.6f, 0.6f, 0.6f), sw, sh);
             RenderText(textShader, "Seleccione una puerta (recuerdo):", 50.0f, 120.0f, 0.5f, glm::vec3(0.9f, 0.8f, 0.8f), sw, sh);
-            RenderText(textShader, "S -> Garage | A -> Infancia | T -> Navidad | J -> Final", 50.0f, 60.0f, 0.6f, glm::vec3(0.9f, 0.2f, 0.2f), sw, sh);
+            RenderText(textShader, "1 o G -> Garage | 2 o I -> Infancia | 3 o T -> Navidad | 4 o J -> Final", 50.0f, 60.0f, 0.6f, glm::vec3(0.9f, 0.2f, 0.2f), sw, sh);
 
             glfwSwapBuffers(window);
             glfwPollEvents();
