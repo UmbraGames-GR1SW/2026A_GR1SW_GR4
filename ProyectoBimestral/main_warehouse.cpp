@@ -104,8 +104,8 @@ const float GRID_SAFETY_MARGIN = 8.0f;
 // niebla que come la visibilidad lejana + vineta en los bordes.
 // Todo combinado a la vez, no es un modo que se elige.
 // -----------------------------------------------------------
-const float FLASHLIGHT_INNER_CUTOFF_DEG = 12.5f;
-const float FLASHLIGHT_OUTER_CUTOFF_DEG = 20.0f;
+const float FLASHLIGHT_INNER_CUTOFF_DEG = 13.0f;
+const float FLASHLIGHT_OUTER_CUTOFF_DEG = 21.0f;
 
 // Parpadeo de linterna: cada FLICKER_STEP_DURATION segundos se decide un
 // nuevo nivel de intensidad. La mayoria de las veces es sutil (0.75-1.0);
@@ -127,15 +127,14 @@ const float BLACKOUT_MIN_DURATION = 1.0f;
 const float BLACKOUT_MAX_DURATION = 3.0f;
 
 const glm::vec3 RED_LIGHT_COLOR = glm::vec3(1.0f, 0.05f, 0.05f);
-const float RED_LIGHT_BASE_INTENSITY = 0.9f;  // intensidad de cada foco individual (ya no es un glow global)
-const float RED_LIGHT_PULSE_AMOUNT = 0.5f;
-const float RED_LIGHT_PULSE_SPEED = 1.6f;      // velocidad del "latido"
+const float RED_LIGHT_BASE_INTENSITY = 1.3f;   // subido: ahora se nota bien incluso lejos
+const float RED_LIGHT_PULSE_AMOUNT = 0.9f;     // rango grande de sube-y-baja
+const float RED_LIGHT_PULSE_SPEED = 0.55f;     // mas lento: ciclo completo dura ~11s, se percibe como "respirar"
 
 // Niebla: cuanto mas alto FOG_DENSITY, antes se pierde la visibilidad.
-// Subida de nuevo a pedido para que el fondo se pierda mas rapido
-// (por como funciona la formula, lo cercano casi no se ve afectado).
-const glm::vec3 FOG_COLOR = glm::vec3(0.03f, 0.01f, 0.01f); // negro con tinte rojizo
-const float FOG_DENSITY = 0.009f;
+// Mas oscura y densa que antes: el fondo se pierde en negro casi total.
+const glm::vec3 FOG_COLOR = glm::vec3(0.012f, 0.003f, 0.003f);
+const float FOG_DENSITY = 0.012f;
 
 // -----------------------------------------------------------
 // Focos de techo: la luz roja sale de puntos sobre el techo real del
@@ -180,6 +179,12 @@ const float DESATURATION_AMOUNT = 0.55f;
 // muy lisa/metalica/mojada); mas bajo = brillo mas difuso y amplio.
 const float MATERIAL_SHININESS = 24.0f;
 
+// Contraste crudo: >1 aplasta las sombras a negro (no se "adivina" lo que
+// hay en la oscuridad); 1.0 = sin cambio. Grano: textura sucia tipo
+// camara vieja/found footage, 0 = sin grano.
+const float CONTRAST_POWER = 1.25f; // bajado de 1.45: ese valor ahogaba demasiado la linterna
+const float GRAIN_AMOUNT = 0.05f;
+
 // Indices de malla a excluir por completo de la colision (por ejemplo
 // una lampara colgante, cables, o el "shell" exterior/techo si genera
 // falsos positivos). Se llenan mirando la consola si algo bloquea mal.
@@ -203,6 +208,17 @@ float lastFrame = 0.0f;
 bool g_inBlackout = false;
 float g_nextBlackoutTime = -1.0f; // se inicializa la primera vez que se usa
 float g_blackoutEndTime = 0.0f;
+
+// Apagon real por foco: cada luz roja tiene su propio ciclo de
+// encendido/apagado (periodo y duracion del apagon distintos entre si,
+// para que no se apaguen todas juntas). Es deterministico en base al
+// tiempo, no necesita guardar estado -- salvo un vector para detectar
+// la transicion y loguearla en consola.
+const float RED_LIGHT_OFF_PERIOD_MIN = 28.0f;   // cada cuanto (min) le toca un apagon a una luz
+const float RED_LIGHT_OFF_PERIOD_MAX = 45.0f;   // cada cuanto (max)
+const float RED_LIGHT_OFF_DURATION_MIN = 12.0f; // cuanto dura el apagon (min) -- largo, para que se note bien
+const float RED_LIGHT_OFF_DURATION_MAX = 18.0f; // cuanto dura el apagon (max)
+std::vector<bool> g_redLightWasOff;
 
 // Pseudo-random determinista basado en un valor (para el parpadeo de la linterna)
 float PseudoRandom01(float seed)
@@ -679,6 +695,39 @@ int main()
         << camera.Position.x << ", " << camera.Position.y << ", " << camera.Position.z
         << ")" << std::endl;
 
+    // -------------------- Orientar la camara hacia el centro del edificio --------------------
+    // Por defecto la camara mira hacia -Z, que puede ser directo a una pared
+    // segun donde caiga el spawn. La giramos para que apunte hacia el centro
+    // del edificio (en el plano horizontal), asi arrancas viendo el espacio
+    // en general y no la cara de un muro.
+    {
+        glm::vec3 buildingCenterXZ(
+            (g_worldAABB.min.x + g_worldAABB.max.x) * 0.5f,
+            camera.Position.y,
+            (g_worldAABB.min.z + g_worldAABB.max.z) * 0.5f
+        );
+        glm::vec3 toCenter = buildingCenterXZ - camera.Position;
+        toCenter.y = 0.0f;
+        if (glm::length(toCenter) > 0.001f)
+        {
+            toCenter = glm::normalize(toCenter);
+            camera.Yaw = glm::degrees(atan2f(toCenter.z, toCenter.x));
+            camera.Pitch = 0.0f;
+
+            // Recalculamos Front/Right/Up a mano con la misma formula que usa
+            // la clase Camera internamente (updateCameraVectors es privado,
+            // no lo podemos llamar desde aca) para que quede correcto ya en
+            // este mismo frame, sin esperar al primer movimiento de mouse.
+            glm::vec3 newFront;
+            newFront.x = cosf(glm::radians(camera.Yaw)) * cosf(glm::radians(camera.Pitch));
+            newFront.y = sinf(glm::radians(camera.Pitch));
+            newFront.z = sinf(glm::radians(camera.Yaw)) * cosf(glm::radians(camera.Pitch));
+            camera.Front = glm::normalize(newFront);
+            camera.Right = glm::normalize(glm::cross(camera.Front, camera.WorldUp));
+            camera.Up = glm::normalize(glm::cross(camera.Right, camera.Front));
+        }
+    }
+
     // Reseteamos el reloj aca (no antes): cargar el modelo puede tardar
     // varios segundos, y si no hacemos esto el primer deltaTime del loop
     // seria enorme, generando un salto de movimiento brusco que te deja
@@ -764,17 +813,58 @@ int main()
         // ocasional -- que no esten todas sincronizadas da mucho mas
         // ambiente de "instalacion electrica fallando" que un pulso unico.
         const float GOLDEN_ANGLE = 2.399963f;
+        if (g_redLightWasOff.size() != g_redLightPositions.size())
+            g_redLightWasOff.assign(g_redLightPositions.size(), false);
+
         std::vector<float> perLightIntensity(g_redLightPositions.size());
         for (size_t i = 0; i < g_redLightPositions.size(); i++)
         {
             float phase = (float)i * GOLDEN_ANGLE;
-            float wave = 0.5f + 0.5f * sinf(currentFrame * RED_LIGHT_PULSE_SPEED + phase);
-            float value = RED_LIGHT_BASE_INTENSITY + RED_LIGHT_PULSE_AMOUNT * wave;
 
-            // Parpadeo ocasional propio de esta lampara (mas lento que el de la linterna)
+            // Fluctuacion normal: dos ondas de frecuencias no relacionadas
+            // sumadas (no una sola sinusoide perfecta) para que el "respirar"
+            // se sienta irregular, como un tubo fluorescente inestable.
+            float waveSlow = 0.5f + 0.5f * sinf(currentFrame * RED_LIGHT_PULSE_SPEED + phase);
+            float waveFast = 0.5f + 0.5f * sinf(currentFrame * RED_LIGHT_PULSE_SPEED * 5.3f + phase * 1.7f);
+            float combinedWave = waveSlow * 0.8f + waveFast * 0.2f;
+            float value = RED_LIGHT_BASE_INTENSITY + RED_LIGHT_PULSE_AMOUNT * combinedWave;
+
+            // -------- Ciclo propio de esta lampara: normal -> se pone
+            // inestable -> se corta -> vuelve titilando -> normal --------
+            float period = PseudoRandomRange((float)i * 12.11f + 1.0f, RED_LIGHT_OFF_PERIOD_MIN, RED_LIGHT_OFF_PERIOD_MAX);
+            float offDuration = PseudoRandomRange((float)i * 27.53f + 2.0f, RED_LIGHT_OFF_DURATION_MIN, RED_LIGHT_OFF_DURATION_MAX);
+            float phaseOffset = PseudoRandomRange((float)i * 41.77f + 3.0f, 0.0f, period);
+            float cyclePos = fmodf(currentFrame + phaseOffset, period);
+
+            const float PRE_OFF_STUTTER = 1.4f;  // se pone inestable antes de cortarse
+            const float POST_ON_STUTTER = 1.1f;  // titila al volver, antes de estabilizarse
+            const float STUTTER_RATE = 13.0f;    // "parpadeos" por segundo durante la inestabilidad
+
+            bool isOff = cyclePos < offDuration;
+            bool isPreOffStutter = cyclePos >= (period - PRE_OFF_STUTTER);
+            bool isPostOnStutter = !isOff && cyclePos < (offDuration + POST_ON_STUTTER);
+
+            if (isPreOffStutter || isPostOnStutter)
+            {
+                // Parpadeo brusco tipo foco flojo/a punto de fallar: bloques
+                // rapidos de prendido/apagado, no un fundido suave.
+                float stutterStep = floorf(currentFrame * STUTTER_RATE + (float)i * 3.7f);
+                float stutterRoll = PseudoRandom01(stutterStep * 7.91f + (float)i * 101.3f);
+                value = (stutterRoll > 0.45f) ? value : value * 0.05f;
+            }
+
+            if (isOff != g_redLightWasOff[i])
+            {
+                std::cout << "[DEBUG] Luz roja " << i << (isOff ? " se APAGO (corte de electricidad)" : " volvio la electricidad") << std::endl;
+                g_redLightWasOff[i] = isOff;
+            }
+            if (isOff)
+                value = 0.0f;
+
+            // Parpadeo brusco ocasional adicional, sutil, incluso en operacion normal
             float lightFlickerStep = floorf(currentFrame / (FLICKER_STEP_DURATION * 4.0f));
             float lightFlickerRoll = PseudoRandom01(lightFlickerStep * 5.13f + (float)i * 91.7f);
-            if (lightFlickerRoll < 0.06f)
+            if (!isOff && lightFlickerRoll < 0.06f)
                 value *= 0.15f;
 
             perLightIntensity[i] = value;
@@ -794,6 +884,9 @@ int main()
         ourShader.setVec2("screenSize", glm::vec2((float)SCR_WIDTH, (float)SCR_HEIGHT));
         ourShader.setFloat("desaturation", DESATURATION_AMOUNT);
         ourShader.setFloat("materialShininess", MATERIAL_SHININESS);
+        ourShader.setFloat("uTime", currentFrame);
+        ourShader.setFloat("contrastPower", CONTRAST_POWER);
+        ourShader.setFloat("grainAmount", GRAIN_AMOUNT);
 
         ourModel.Draw(ourShader);
 
