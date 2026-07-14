@@ -415,3 +415,10 @@ Release/
 !ProyectoBimestral/model/Warehouse/abandoned_warehouse_-_interior_scene/*.jpeg
 !ProyectoBimestral/model/Warehouse/abandoned_warehouse_-_interior_scene/textures/
 *.bmp
+
+# Excepciones: permitir todos los assets del proyecto (modelos, texturas, audio)
+!ProyectoBimestral/model/**
+!ProyectoBimestral/audios/**
+!ProyectoBimestral/music/**
+!ProyectoBimestral/shaders/**
+!ProyectoBimestral/fonts/**

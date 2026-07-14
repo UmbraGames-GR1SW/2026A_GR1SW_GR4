@@ -33,10 +33,24 @@ namespace Samy {
     void processInput(GLFWwindow* window);
     void ClampPlayerToGarage();
     float HorrorFlicker(float time);
+    unsigned int loadTexture(char const* path);
 
     // settings
     static unsigned int SCR_WIDTH = 1920;
     static unsigned int SCR_HEIGHT = 1080;
+
+    // -------------------------------------------------------------------------------------
+    // ESTADOS PARA LA SALIDA CINEMÁTICA AL PASILLO
+    // -------------------------------------------------------------------------------------
+    enum ExitPhase {
+        EXIT_NONE,
+        EXIT_WAIT_BLACK, // Segundos en negro inicial
+        EXIT_FADE_IN,    // Aparece lentamente la imagen
+        EXIT_SHOW,       // Muestra la imagen por 10s
+        EXIT_FADE_OUT    // Se desvanece a negro y cambia de escena
+    };
+    static ExitPhase exitPhase = EXIT_NONE;
+    static float exitTimer = 0.0f;
 
     // -------------------------------------------------------------------------------------
     // PERSONAJE / CAMARA
@@ -174,6 +188,10 @@ namespace Samy {
         phoneRedLightOn = false;
         timeElapsed = 0.0f;
 
+        // Reiniciar máquina de estados de salida
+        exitPhase = EXIT_NONE;
+        exitTimer = 0.0f;
+
         initaudio();
 
         InitFreeType("fonts/arial.ttf");
@@ -192,6 +210,47 @@ namespace Samy {
         Model linternaModel("./model/linterna/linterna.obj");
         Model phoneModel("./model/phone/phone.obj");
         camera.MovementSpeed = debugMode ? 0.5f : 0.2f;
+
+        // ---- CONFIGURACIÓN DEL QUAD Y SHADERS PARA LA PANTALLA DE SALIDA ----
+        unsigned int exitTexture = loadTexture("./model/garage/exit_message.jpg"); // ASEGURAR QUE EXISTA ESTA IMAGEN
+
+        float quadVertices[] = {
+            // Posiciones   // Texturas
+            -1.0f,  1.0f,  0.0f, 0.0f,
+            -1.0f, -1.0f,  0.0f, 1.0f,
+             1.0f, -1.0f,  1.0f, 1.0f,
+            -1.0f,  1.0f,  0.0f, 0.0f,
+             1.0f, -1.0f,  1.0f, 1.0f,
+             1.0f,  1.0f,  1.0f, 0.0f
+        };
+        unsigned int quadVAO, quadVBO;
+        glGenVertexArrays(1, &quadVAO);
+        glGenBuffers(1, &quadVBO);
+        glBindVertexArray(quadVAO);
+        glBindBuffer(GL_ARRAY_BUFFER, quadVBO);
+        glBufferData(GL_ARRAY_BUFFER, sizeof(quadVertices), &quadVertices, GL_STATIC_DRAW);
+        glEnableVertexAttribArray(0);
+        glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 4 * sizeof(float), (void*)0);
+        glEnableVertexAttribArray(1);
+        glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 4 * sizeof(float), (void*)(2 * sizeof(float)));
+
+        const char* vShaderCode = "#version 330 core\nlayout (location = 0) in vec2 aPos;\nlayout (location = 1) in vec2 aTexCoords;\nout vec2 TexCoords;\nvoid main() { TexCoords = aTexCoords; gl_Position = vec4(aPos.x, aPos.y, 0.0, 1.0); }\n";
+        const char* fShaderCode = "#version 330 core\nout vec4 FragColor;\nin vec2 TexCoords;\nuniform sampler2D screenTexture;\nuniform float fade;\nvoid main() { FragColor = vec4(texture(screenTexture, TexCoords).rgb * fade, 1.0); }\n";
+
+        unsigned int vertex, fragment, quadShaderProgram;
+        vertex = glCreateShader(GL_VERTEX_SHADER);
+        glShaderSource(vertex, 1, &vShaderCode, NULL);
+        glCompileShader(vertex);
+        fragment = glCreateShader(GL_FRAGMENT_SHADER);
+        glShaderSource(fragment, 1, &fShaderCode, NULL);
+        glCompileShader(fragment);
+        quadShaderProgram = glCreateProgram();
+        glAttachShader(quadShaderProgram, vertex);
+        glAttachShader(quadShaderProgram, fragment);
+        glLinkProgram(quadShaderProgram);
+        glDeleteShader(vertex);
+        glDeleteShader(fragment);
+
 
         int frameCount = 0;
         float previousTime = (float)glfwGetTime();
@@ -217,6 +276,62 @@ namespace Samy {
 
             timeElapsed += deltaTime;
             processInput(window);
+
+            // Si estamos en la secuencia de salida, saltamos la lógica y renderizado normal 3D
+            if (exitPhase != EXIT_NONE)
+            {
+                glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
+                glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+
+                glDisable(GL_DEPTH_TEST);
+                glUseProgram(quadShaderProgram);
+                glBindVertexArray(quadVAO);
+
+                float fadeValue = 0.0f;
+                float fadeDuration = 2.5f;
+
+                if (exitPhase == EXIT_WAIT_BLACK)
+                {
+                    if (currentFrame - exitTimer >= 2.0f) { // 2 Segundos iniciales en negro puro
+                        exitPhase = EXIT_FADE_IN;
+                        exitTimer = currentFrame;
+                    }
+                }
+                else if (exitPhase == EXIT_FADE_IN)
+                {
+                    float progress = (currentFrame - exitTimer) / fadeDuration;
+                    fadeValue = glm::clamp(progress, 0.0f, 1.0f);
+                    if (progress >= 1.0f) {
+                        exitPhase = EXIT_SHOW;
+                        exitTimer = currentFrame;
+                    }
+                }
+                else if (exitPhase == EXIT_SHOW)
+                {
+                    fadeValue = 1.0f;
+                    if (currentFrame - exitTimer >= 10.0f) { // 10 Segundos mostrando la imagen
+                        exitPhase = EXIT_FADE_OUT;
+                        exitTimer = currentFrame;
+                    }
+                }
+                else if (exitPhase == EXIT_FADE_OUT)
+                {
+                    float progress = (currentFrame - exitTimer) / fadeDuration;
+                    fadeValue = 1.0f - glm::clamp(progress, 0.0f, 1.0f);
+                    if (progress >= 1.0f) {
+                        g_NextScene = SCENE_PASILLO; // Regreso automático al Pasillo
+                    }
+                }
+
+                glUniform1f(glGetUniformLocation(quadShaderProgram, "fade"), fadeValue);
+                glBindTexture(GL_TEXTURE_2D, exitTexture);
+                glDrawArrays(GL_TRIANGLES, 0, 6);
+
+                glfwSwapBuffers(window);
+                glfwPollEvents();
+                continue; // Saltar el resto del bucle while
+            }
+
 
             // 1. Audio de fondo inicial
             if (!fondoPlayed && timeElapsed >= 0.0f)
@@ -304,7 +419,6 @@ namespace Samy {
             ourShader.setVec3("viewPos", camera.Position);
             ourShader.setBool("debugFullBright", debugMode);
 
-            int width, height;
             glfwGetFramebufferSize(window, &width, &height);
             SCR_WIDTH = width;
             SCR_HEIGHT = height;
@@ -531,6 +645,9 @@ namespace Samy {
         }
 
         haltmusic();
+        glDeleteVertexArrays(1, &quadVAO);
+        glDeleteBuffers(1, &quadVBO);
+        glDeleteProgram(quadShaderProgram);
     }
 
     // DELIMITACIÓN DE LOS OBJETOS 
@@ -599,8 +716,58 @@ namespace Samy {
         return baseIntensity;
     }
 
+    unsigned int loadTexture(char const* path)
+    {
+        unsigned int textureID;
+        glGenTextures(1, &textureID);
+
+        int width, height, nrComponents;
+        unsigned char* data = stbi_load(path, &width, &height, &nrComponents, 0);
+        if (data)
+        {
+            GLenum format;
+            if (nrComponents == 1) format = GL_RED;
+            else if (nrComponents == 3) format = GL_RGB;
+            else if (nrComponents == 4) format = GL_RGBA;
+
+            glBindTexture(GL_TEXTURE_2D, textureID);
+            glTexImage2D(GL_TEXTURE_2D, 0, format, width, height, 0, format, GL_UNSIGNED_BYTE, data);
+            glGenerateMipmap(GL_TEXTURE_2D);
+
+            stbi_image_free(data);
+        }
+        else
+        {
+            // Fallback: Si no encuentra la imagen genera un pixel negro puro de forma segura
+            glBindTexture(GL_TEXTURE_2D, textureID);
+            unsigned char blackPixel[3] = { 0, 0, 0 };
+            glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, 1, 1, 0, GL_RGB, GL_UNSIGNED_BYTE, blackPixel);
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+        }
+        return textureID;
+    }
+
     void processInput(GLFWwindow* window)
     {
+        if (glfwGetKey(window, GLFW_KEY_ESCAPE) == GLFW_PRESS)
+            glfwSetWindowShouldClose(window, true);
+
+        // --- BLOQUEO DE CONTROLES SI SE ESTÁ MOSTRANDO LA SALIDA CINEMÁTICA ---
+        if (exitPhase != EXIT_NONE) {
+            return;
+        }
+
+        // Tecla para volver al Pasillo de forma cinematográfica
+        if (glfwGetKey(window, GLFW_KEY_H) == GLFW_PRESS && !jumpscareActive)
+        {
+            exitPhase = EXIT_WAIT_BLACK;
+            exitTimer = (float)glfwGetTime();
+            haltmusic();
+            haltsound();
+            return;
+        }
+
         float baseSpeed = debugMode ? 0.5f : 0.2f;
         bool isRunning = (glfwGetKey(window, GLFW_KEY_LEFT_SHIFT) == GLFW_PRESS || glfwGetKey(window, GLFW_KEY_RIGHT_SHIFT) == GLFW_PRESS);
         camera.MovementSpeed = isRunning ? (baseSpeed * 2.0f) : baseSpeed;
@@ -618,13 +785,6 @@ namespace Samy {
             setvolume(get_global_volume() - 10);
         }
         downKeyPressedLastFrame = downPressed;
-
-        if (glfwGetKey(window, GLFW_KEY_ESCAPE) == GLFW_PRESS)
-            glfwSetWindowShouldClose(window, true);
-
-        // Tecla para volver al Pasillo
-        if (glfwGetKey(window, GLFW_KEY_H) == GLFW_PRESS)
-            g_NextScene = SCENE_PASILLO;
 
         if (glfwGetKey(window, GLFW_KEY_W) == GLFW_PRESS)
             camera.ProcessKeyboard(FORWARD, deltaTime);
@@ -710,13 +870,15 @@ namespace Samy {
         lastX = (float)xpos;
         lastY = (float)ypos;
 
-        if (!jumpscareActive) {
+        if (!jumpscareActive && exitPhase == EXIT_NONE) {
             camera.ProcessMouseMovement(xoffset, yoffset);
         }
     }
 
     void scroll_callback(GLFWwindow* window, double xoffset, double yoffset)
     {
-        camera.ProcessMouseScroll((float)yoffset);
+        if (exitPhase == EXIT_NONE) {
+            camera.ProcessMouseScroll((float)yoffset);
+        }
     }
 }
