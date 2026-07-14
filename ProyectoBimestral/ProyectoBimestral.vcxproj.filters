@@ -52,11 +52,6 @@
     </None>
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="text_renderer.h">
-      <Filter>Archivos de origen</Filter>
-    </ClInclude>
-  </ItemGroup>
-  <ItemGroup>
     <Media Include="audios\miedo.mp3">
       <Filter>Archivos de origen\audios</Filter>
     </Media>

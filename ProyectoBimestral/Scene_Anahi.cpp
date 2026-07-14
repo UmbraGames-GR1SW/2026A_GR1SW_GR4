@@ -20,7 +20,7 @@
 #include <string>
 #include <algorithm>
 
-#include "text_renderer.h"
+#include "learnopengl/text_renderer.h"
 
 #define STB_IMAGE_IMPLEMENTATION
 #include "learnopengl/stb_image.h"
