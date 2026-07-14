@@ -386,3 +386,5 @@ Release/
 *.tga
 *.bmp
 /ProyectoBimestral/model/dreamcore/grass_medium_02_sphere_baseColor.jpeg
+# Excepción: permitir todos los assets del proyecto
+!ProyectoBimestral/model/**

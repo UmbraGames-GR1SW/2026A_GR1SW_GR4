@@ -27,5 +27,7 @@
   </ItemGroup>
   <ItemGroup>
     <None Include="Vertex_Josue.vs" />
+    <None Include="shaders\text.vs" />
+    <None Include="shaders\text.fs" />
   </ItemGroup>
 </Project>

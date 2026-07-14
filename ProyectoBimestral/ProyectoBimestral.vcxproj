@@ -149,6 +149,8 @@
     <ClCompile Include="Scene_Josue.cpp" />
   </ItemGroup>
   <ItemGroup>
+    <None Include="shaders\text.fs" />
+    <None Include="shaders\text.vs" />
     <None Include="Vertex_Josue.vs" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
