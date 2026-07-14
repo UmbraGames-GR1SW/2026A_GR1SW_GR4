@@ -21,9 +21,17 @@ struct Character {
 };
 
 inline std::map<char, Character> Characters;
-inline unsigned int textVAO, textVBO;
+inline unsigned int textVAO = 0, textVBO = 0;
 
 inline void InitFreeType(const std::string& fontPath) {
+    // Delete existing textures to avoid GPU memory leaks
+    for (auto const& [key, val] : Characters) {
+        if (val.TextureID != 0) {
+            glDeleteTextures(1, &val.TextureID);
+        }
+    }
+    Characters.clear();
+
     FT_Library ft;
     if (FT_Init_FreeType(&ft)) {
         std::cout << "ERROR::FREETYPE: Could not init FreeType Library" << std::endl;
@@ -79,8 +87,13 @@ inline void InitFreeType(const std::string& fontPath) {
     FT_Done_Face(face);
     FT_Done_FreeType(ft);
 
-    glGenVertexArrays(1, &textVAO);
-    glGenBuffers(1, &textVBO);
+    // Reuse VAO/VBO if they are already generated to avoid leaks
+    if (textVAO == 0) {
+        glGenVertexArrays(1, &textVAO);
+    }
+    if (textVBO == 0) {
+        glGenBuffers(1, &textVBO);
+    }
     glBindVertexArray(textVAO);
     glBindBuffer(GL_ARRAY_BUFFER, textVBO);
     glBufferData(GL_ARRAY_BUFFER, sizeof(float) * 6 * 4, NULL, GL_DYNAMIC_DRAW);
@@ -100,9 +113,11 @@ inline float GetTextWidth(const std::string& text, float scale) {
     return width;
 }
 
-inline void RenderText(Shader &s, std::string text, float x, float y, float scale, glm::vec3 color, float scrWidth, float scrHeight) {
+inline void RenderText(Shader &s, std::string text, float x, float y, float scale, glm::vec3 color, float scrWidth, float scrHeight, float alpha = 1.0f) {
     s.use();
+    s.setInt("text", 0); // Explicitly set text sampler to texture unit 0
     s.setVec3("textColor", color);
+    s.setFloat("textAlpha", alpha);
     
     glm::mat4 projection = glm::ortho(0.0f, scrWidth, 0.0f, scrHeight);
     s.setMat4("projection", projection);

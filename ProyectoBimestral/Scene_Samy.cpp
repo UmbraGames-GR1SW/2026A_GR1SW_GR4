@@ -25,6 +25,7 @@
 extern enum SceneType { SCENE_PASILLO, SCENE_SAMY, SCENE_ANI, SCENE_MATTHEW, SCENE_JOSUE };
 extern SceneType g_CurrentScene;
 extern SceneType g_NextScene;
+extern int g_UnlockedLevel;
 
 namespace Samy {
     void framebuffer_size_callback(GLFWwindow* window, int width, int height);
@@ -319,11 +320,15 @@ namespace Samy {
                     float progress = (currentFrame - exitTimer) / fadeDuration;
                     fadeValue = 1.0f - glm::clamp(progress, 0.0f, 1.0f);
                     if (progress >= 1.0f) {
+                        if (g_UnlockedLevel < 2) {
+                            g_UnlockedLevel = 2;
+                        }
                         g_NextScene = SCENE_PASILLO; // Regreso automático al Pasillo
                     }
                 }
 
                 glUniform1f(glGetUniformLocation(quadShaderProgram, "fade"), fadeValue);
+                glActiveTexture(GL_TEXTURE0);
                 glBindTexture(GL_TEXTURE_2D, exitTexture);
                 glDrawArrays(GL_TRIANGLES, 0, 6);
 
@@ -734,10 +739,17 @@ namespace Samy {
             glTexImage2D(GL_TEXTURE_2D, 0, format, width, height, 0, format, GL_UNSIGNED_BYTE, data);
             glGenerateMipmap(GL_TEXTURE_2D);
 
+            // Set explicit texture parameters for safety
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+
             stbi_image_free(data);
         }
         else
         {
+            std::cout << "ERROR::TEXTURE:: Failed to load " << path << ". Reason: " << stbi_failure_reason() << std::endl;
             // Fallback: Si no encuentra la imagen genera un pixel negro puro de forma segura
             glBindTexture(GL_TEXTURE_2D, textureID);
             unsigned char blackPixel[3] = { 0, 0, 0 };
