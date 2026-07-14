@@ -18,6 +18,7 @@
 #include <learnopengl/stb_image.h>
 
 #include <iostream>
+#include <string>
 #include <algorithm>
 #include <vector>
 #include <cfloat>
@@ -36,6 +37,17 @@ void processInput(GLFWwindow* window);
 // ---------------------------------------------------------
 const unsigned int SCR_WIDTH = 1280;
 const unsigned int SCR_HEIGHT = 720;
+
+// -----------------------------------------------------------
+// Modelo extra: se carga, escala y ubica en el centro del warehouse, a
+// nivel de piso, y se dibuja con el MISMO shader que el resto (hereda
+// linterna, luces rojas, niebla, grano, etc. automaticamente).
+// -----------------------------------------------------------
+const bool ADD_EXTRA_MODEL = true;
+const std::string EXTRA_MODEL_PATH = "C:/Users/redin/source/repos/2026A_GR1SW_GR4/ProyectoBimestral/model/C_Tree/C_tree.obj";
+const float EXTRA_MODEL_TARGET_HEIGHT = 4.0f; // altura deseada en unidades de mundo, ajustable
+const bool  EXTRA_MODEL_IS_Z_UP = false;       // poner true si aparece "acostado"
+const bool  EXTRA_MODEL_ADD_COLLISION = true;  // false si no queres que bloquee el paso
 
 // ---------------------------------------------------------
 // Configuración de escala / jugador
@@ -505,6 +517,45 @@ void BuildCollisionGrid(Model& model, const glm::mat4& modelMatrix, const AABB& 
         << g_redLightPositions[i].y << ", " << g_redLightPositions[i].z << ")" << std::endl;
 }
 
+// -----------------------------------------------------------
+// Suma la colision de un modelo EXTRA (ej. el arbol) a la grilla que ya
+// se construyo para el warehouse -- no la reconstruye, solo agrega mas
+// celdas solidas. Usa la misma franja de altura que el resto, asi que
+// el piso/techo del modelo extra (si tuviera) tambien se ignora igual.
+// -----------------------------------------------------------
+void AddModelCollision(Model& model, const glm::mat4& modelMatrix, float floorY)
+{
+    float bandMin = floorY + COLLISION_BAND_MIN;
+    float bandMax = floorY + COLLISION_BAND_MAX;
+    long long trianglesAdded = 0;
+
+    for (auto& mesh : model.meshes)
+    {
+        auto& verts = mesh.vertices;
+        auto& idx = mesh.indices;
+        for (size_t i = 0; i + 2 < idx.size(); i += 3)
+        {
+            glm::vec3 p0 = glm::vec3(modelMatrix * glm::vec4(verts[idx[i]].Position, 1.0f));
+            glm::vec3 p1 = glm::vec3(modelMatrix * glm::vec4(verts[idx[i + 1]].Position, 1.0f));
+            glm::vec3 p2 = glm::vec3(modelMatrix * glm::vec4(verts[idx[i + 2]].Position, 1.0f));
+
+            float yMin = std::min({ p0.y, p1.y, p2.y });
+            float yMax = std::max({ p0.y, p1.y, p2.y });
+            if (yMax < bandMin || yMin > bandMax)
+                continue;
+
+            float xMin = std::min({ p0.x, p1.x, p2.x });
+            float xMax = std::max({ p0.x, p1.x, p2.x });
+            float zMin = std::min({ p0.z, p1.z, p2.z });
+            float zMax = std::max({ p0.z, p1.z, p2.z });
+
+            g_grid.MarkSolidWorldBox(xMin, xMax, zMin, zMax);
+            trianglesAdded++;
+        }
+    }
+    std::cout << "[DEBUG] Colision agregada para modelo extra: " << trianglesAdded << " triangulos." << std::endl;
+}
+
 // Hay piso pisable en esta posicion? (usa el centro del jugador, no el
 // radio completo, para no bloquear el borde del piso antes de tiempo).
 bool HasFloorAt(const glm::vec3& pos)
@@ -660,6 +711,45 @@ int main()
 
     // -------------------- Grilla de colision (paredes, columnas, sillas, etc.) --------------------
     BuildCollisionGrid(ourModel, warehouseModelMatrix, g_worldAABB);
+
+    // -------------------- Modelo extra (arbol), centrado y a nivel de piso --------------------
+    Model* extraModel = nullptr;
+    glm::mat4 extraModelMatrix = glm::mat4(1.0f);
+    if (ADD_EXTRA_MODEL)
+    {
+        extraModel = new Model(EXTRA_MODEL_PATH);
+
+        glm::vec3 emin(FLT_MAX), emax(-FLT_MAX);
+        for (auto& mesh : extraModel->meshes)
+            for (auto& v : mesh.vertices) {
+                emin = glm::min(emin, v.Position);
+                emax = glm::max(emax, v.Position);
+            }
+        glm::vec3 eSize = emax - emin;
+        float eHeight = eSize.y;
+        float extraScale = (eHeight > 0.0001f) ? (EXTRA_MODEL_TARGET_HEIGHT / eHeight) : 1.0f;
+
+        glm::vec2 localCenterXZ((emin.x + emax.x) * 0.5f, (emin.z + emax.z) * 0.5f);
+        glm::vec2 buildingCenterXZ((g_worldAABB.min.x + g_worldAABB.max.x) * 0.5f, (g_worldAABB.min.z + g_worldAABB.max.z) * 0.5f);
+        float floorY = g_worldAABB.min.y;
+
+        glm::vec3 worldPos(
+            buildingCenterXZ.x - localCenterXZ.x * extraScale,
+            floorY - emin.y * extraScale,
+            buildingCenterXZ.y - localCenterXZ.y * extraScale
+        );
+
+        extraModelMatrix = glm::translate(glm::mat4(1.0f), worldPos);
+        if (EXTRA_MODEL_IS_Z_UP)
+            extraModelMatrix = glm::rotate(extraModelMatrix, glm::radians(-90.0f), glm::vec3(1.0f, 0.0f, 0.0f));
+        extraModelMatrix = glm::scale(extraModelMatrix, glm::vec3(extraScale));
+
+        std::cout << "[DEBUG] Modelo extra cargado. Escala=" << extraScale
+            << " (altura local=" << eHeight << " -> objetivo=" << EXTRA_MODEL_TARGET_HEIGHT << ")" << std::endl;
+
+        if (EXTRA_MODEL_ADD_COLLISION)
+            AddModelCollision(*extraModel, extraModelMatrix, floorY);
+    }
 
     // -------------------- Spawn de la cámara --------------------
     glm::vec3 spawnTarget(
@@ -902,6 +992,15 @@ int main()
         ourShader.setFloat("startleFlash", startleFlash);
 
         ourModel.Draw(ourShader);
+
+        // El modelo extra usa el MISMO shader ya configurado este frame
+        // (linterna, luces rojas, niebla, grano, etc.) -- solo cambiamos
+        // la matriz "model" para ubicarlo en su lugar.
+        if (extraModel)
+        {
+            ourShader.setMat4("model", extraModelMatrix);
+            extraModel->Draw(ourShader);
+        }
 
         // -------- Bombillas visibles en cada foco de techo --------
         // Sirve tanto para atmosfera (se ve un punto de luz real) como
