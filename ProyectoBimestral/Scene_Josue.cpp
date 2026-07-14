@@ -11,6 +11,7 @@
 #include <learnopengl/shader.h>
 #include <learnopengl/camera.h>
 #include <learnopengl/model.h>
+#include <learnopengl/audio.h>
 
 #include <iostream>
 #include <string>
@@ -24,9 +25,11 @@ void mouse_callback(GLFWwindow* window, double xpos, double ypos);
 void scroll_callback(GLFWwindow* window, double xoffset, double yoffset);
 void processInput(GLFWwindow* window);
 void ClampPlayerToRoom();
-unsigned int loadTexture(char const* path); // Función para cargar la imagen 2D
+unsigned int loadTexture(char const* path);
 
 bool pKeyPressedLastFrame = false;
+bool upKeyPressedLastFrame = false;
+bool downKeyPressedLastFrame = false;
 
 // settings
 const unsigned int SCR_WIDTH = 1280;
@@ -41,7 +44,7 @@ enum GameState {
     BLACK_SCREEN
 };
 GameState gameState = PLAYING;
-float stateTimer = 0.0f; // Controla cuánto tiempo llevas en cada estado
+float stateTimer = 0.0f;
 
 // =========================================================
 // ESCALA Y POSICIÓN
@@ -63,7 +66,7 @@ float entitySpeed = 2.0f;
 bool entityInitialized = false;
 
 // =========================================================
-// VARIABLES DE LA LINTERNA 
+// VARIABLES DE LA LINTERNA
 // =========================================================
 bool flashlightOn = true;
 bool fKeyPressedLastFrame = false;
@@ -86,6 +89,12 @@ float playerHeight = 1.2f;
 float baseLightX[5] = { 0.10074f,   0.259016f,  0.0407524f, 0.0422577f, 0.113721f };
 float baseLightZ[5] = { -0.387055f, 17.4112f,   32.5504f,   50.2641f,   65.4025f };
 float roofHeightY = 4.0f;
+
+// =========================================================
+// AUDIO - FLAGS DE CONTROL
+// =========================================================
+bool ambientPlayed = false;
+bool screamPlayed = false;
 
 int main()
 {
@@ -120,25 +129,27 @@ int main()
     glEnable(GL_DEPTH_TEST);
     std::cout << "Working directory: " << std::filesystem::current_path() << std::endl;
 
+    // --- INICIALIZAR AUDIO ---
+    initaudio();
+    setvolume(100);
+
+    // --- PRECARGAR el grito ANTES del render loop, para que suene instantáneo ---
+    preloadSound("music/scream.mp3", "screamsound");
+
     Shader ourShader("shaders/Vertex_Josue.vs", "shaders/Fragment_Josue.fs");
     Model exitModel("./model/exit/exit.obj");
     Model entidadModel("./model/exit/entidad.obj");
 
-    // =========================================================
-    // PREPARACIÓN DE LA IMAGEN 2D PARA EL JUMPSCARE
-    // =========================================================
-    // Cargamos la textura del grito
     unsigned int screamTexture = loadTexture("./model/exit/scream.jpeg");
 
-    // Coordenadas de un rectángulo que cubre toda la pantalla (NDC)
     float quadVertices[] = {
         // Posiciones   // Texturas
-        -1.0f,  1.0f,  0.0f, 1.0f,
-        -1.0f, -1.0f,  0.0f, 0.0f,
-         1.0f, -1.0f,  1.0f, 0.0f,
-        -1.0f,  1.0f,  0.0f, 1.0f,
-         1.0f, -1.0f,  1.0f, 0.0f,
-         1.0f,  1.0f,  1.0f, 1.0f
+        -1.0f,  1.0f,  0.0f, 0.0f,
+        -1.0f, -1.0f,  0.0f, 1.0f,
+         1.0f, -1.0f,  1.0f, 1.0f,
+        -1.0f,  1.0f,  0.0f, 0.0f,
+         1.0f, -1.0f,  1.0f, 1.0f,
+         1.0f,  1.0f,  1.0f, 0.0f
     };
     unsigned int quadVAO, quadVBO;
     glGenVertexArrays(1, &quadVAO);
@@ -151,7 +162,6 @@ int main()
     glEnableVertexAttribArray(1);
     glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 4 * sizeof(float), (void*)(2 * sizeof(float)));
 
-    // Compilamos un mini-shader directamente en C++ para no obligarte a crear más archivos
     const char* vShaderCode = "#version 330 core\nlayout (location = 0) in vec2 aPos;\nlayout (location = 1) in vec2 aTexCoords;\nout vec2 TexCoords;\nvoid main() { TexCoords = aTexCoords; gl_Position = vec4(aPos.x, aPos.y, 0.0, 1.0); }\n";
     const char* fShaderCode = "#version 330 core\nout vec4 FragColor;\nin vec2 TexCoords;\nuniform sampler2D screenTexture;\nvoid main() { FragColor = texture(screenTexture, TexCoords); }\n";
 
@@ -168,7 +178,6 @@ int main()
     glLinkProgram(quadShaderProgram);
     glDeleteShader(vertex);
     glDeleteShader(fragment);
-    // =========================================================
 
     gameStartTime = (float)glfwGetTime();
 
@@ -178,15 +187,20 @@ int main()
         deltaTime = absoluteTime - lastFrame;
         lastFrame = absoluteTime;
 
-        processInput(window); // Procesa controles (bloqueados si te asustaron)
+        processInput(window);
 
-        // Limpiamos pantalla
+        // --- AUDIO: música de fondo apenas arranca el juego ---
+        if (!ambientPlayed)
+        {
+            playmusic("music/ambiente.mp3");
+            ambientPlayed = true;
+        }
+
         glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
         if (gameState == PLAYING)
         {
-            // === MODO JUEGO NORMAL ===
             float currentSceneTime = absoluteTime - gameStartTime;
             if (currentSceneTime < 7.0f) {
                 entitySpeed = 2.0f;
@@ -195,7 +209,6 @@ int main()
                 entitySpeed = 25.0f;
             }
 
-            // (El Depth Test vuelve a prenderse para 3D)
             glEnable(GL_DEPTH_TEST);
 
             ourShader.use();
@@ -255,11 +268,9 @@ int main()
 
                     std::string base = "pointLights[" + std::to_string(lightIndex) + "].";
                     ourShader.setVec3(base + "position", pos);
-
                     ourShader.setVec3(base + "ambient", glm::vec3(0.05f, 0.0f, 0.0f) * flicker);
                     ourShader.setVec3(base + "diffuse", glm::vec3(1.5f, 0.1f, 0.1f) * flicker);
                     ourShader.setVec3(base + "specular", glm::vec3(1.0f, 0.0f, 0.0f) * flicker);
-
                     ourShader.setFloat(base + "constant", 1.0f);
                     ourShader.setFloat(base + "linear", 0.3f);
                     ourShader.setFloat(base + "quadratic", 0.2f);
@@ -297,22 +308,26 @@ int main()
 
             if (captureDistance < collisionRadius)
             {
-                gameState = JUMPSCARE;           // Disparamos la imagen
-                stateTimer = (float)glfwGetTime(); // Marcamos a qué hora empezó el susto
+                gameState = JUMPSCARE;
+                stateTimer = (float)glfwGetTime();
+
+                // --- AUDIO: detener ambiente y reproducir el grito YA PRECARGADO (instantáneo) ---
+                haltmusic();
+                if (!screamPlayed)
+                {
+                    playPreloaded("screamsound");
+                    screamPlayed = true;
+                }
             }
         }
         else if (gameState == JUMPSCARE)
         {
-            // === MODO JUMPSCARE ===
-            // Desactivar Depth Test para que la imagen 2D flote sobre todo
             glDisable(GL_DEPTH_TEST);
-
             glUseProgram(quadShaderProgram);
             glBindVertexArray(quadVAO);
             glBindTexture(GL_TEXTURE_2D, screamTexture);
-            glDrawArrays(GL_TRIANGLES, 0, 6); // Dibuja la imagen full screen
+            glDrawArrays(GL_TRIANGLES, 0, 6);
 
-            // Si pasaron 1.5 segundos, pasamos a pantalla negra
             if (absoluteTime - stateTimer >= 1.5f) {
                 gameState = BLACK_SCREEN;
                 stateTimer = (float)glfwGetTime();
@@ -320,16 +335,16 @@ int main()
         }
         else if (gameState == BLACK_SCREEN)
         {
-            // === MODO PANTALLA NEGRA ===
-            // (La pantalla ya se limpió de negro al principio del ciclo, no dibujamos nada)
-
-            // Si pasaron 4.0 segundos, reseteamos las posiciones y volvemos a jugar
             if (absoluteTime - stateTimer >= 4.0f) {
                 camera.Position = glm::vec3(0.0f, 1.2f, 1.0f);
                 entityPos = glm::vec3(0.0f, 0.0f, -25.0f);
 
-                gameStartTime = (float)glfwGetTime(); // Reset tiempo de entidad lenta
-                gameState = PLAYING;                  // Vuelta al juego
+                gameStartTime = (float)glfwGetTime();
+                gameState = PLAYING;
+
+                // --- AUDIO: reiniciar flags y volver a poner ambiente ---
+                screamPlayed = false;
+                ambientPlayed = false;
             }
         }
 
@@ -337,11 +352,14 @@ int main()
         glfwPollEvents();
     }
 
+    haltmusic();
+    haltsound();
+    closePreloaded("screamsound");
+
     glfwTerminate();
     return 0;
 }
 
-// Función auxiliar para cargar la textura del jumpscare
 unsigned int loadTexture(char const* path)
 {
     unsigned int textureID;
@@ -382,12 +400,14 @@ void processInput(GLFWwindow* window)
     if (glfwGetKey(window, GLFW_KEY_ESCAPE) == GLFW_PRESS)
         glfwSetWindowShouldClose(window, true);
 
-    // =========================================================
-    // BLOQUEAR CONTROLES SI NO ESTÁS JUGANDO
-    // =========================================================
-    // Si estás viendo el jumpscare o la pantalla negra, ignora botones de movimiento
     if (gameState != PLAYING) {
         return;
+    }
+
+    // --- Bloquea el movimiento los primeros 5 segundos de cada partida ---
+    float currentTime = (float)glfwGetTime();
+    if (currentTime - gameStartTime < 5.0f) {
+        return; // ESC ya se procesó arriba; el resto (WASD, linterna, etc.) se ignora
     }
 
     if (glfwGetKey(window, GLFW_KEY_LEFT_SHIFT) == GLFW_PRESS)
@@ -412,6 +432,20 @@ void processInput(GLFWwindow* window)
         flashlightOn = !flashlightOn;
     }
     fKeyPressedLastFrame = fPressed;
+
+    bool upPressed = glfwGetKey(window, GLFW_KEY_UP) == GLFW_PRESS;
+    if (upPressed && !upKeyPressedLastFrame)
+    {
+        setvolume(get_global_volume() + 10);
+    }
+    upKeyPressedLastFrame = upPressed;
+
+    bool downPressed = glfwGetKey(window, GLFW_KEY_DOWN) == GLFW_PRESS;
+    if (downPressed && !downKeyPressedLastFrame)
+    {
+        setvolume(get_global_volume() - 10);
+    }
+    downKeyPressedLastFrame = downPressed;
 
     bool pPressed = glfwGetKey(window, GLFW_KEY_P) == GLFW_PRESS;
     if (pPressed && !pKeyPressedLastFrame)
@@ -444,7 +478,6 @@ void mouse_callback(GLFWwindow* window, double xpos, double ypos)
     lastX = (float)xpos;
     lastY = (float)ypos;
 
-    // Solo mover la cámara (mirar) si estás vivo
     if (gameState == PLAYING) {
         camera.ProcessMouseMovement(xoffset, yoffset);
     }
