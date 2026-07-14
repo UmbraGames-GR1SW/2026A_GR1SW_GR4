@@ -26,6 +26,7 @@
 extern enum SceneType { SCENE_PASILLO, SCENE_SAMY, SCENE_ANI, SCENE_MATTHEW, SCENE_JOSUE };
 extern SceneType g_CurrentScene;
 extern SceneType g_NextScene;
+extern int g_UnlockedLevel;
 
 namespace Anahi {
     void framebuffer_size_callback(GLFWwindow* window, int width, int height);
@@ -284,11 +285,15 @@ namespace Anahi {
                     float progress = (currentFrame - exitTimer) / fadeDuration;
                     fadeValue = 1.0f - glm::clamp(progress, 0.0f, 1.0f);
                     if (progress >= 1.0f) {
+                        if (g_UnlockedLevel < 3) {
+                            g_UnlockedLevel = 3;
+                        }
                         g_NextScene = SCENE_PASILLO; // Regreso automático al Pasillo
                     }
                 }
 
                 glUniform1f(glGetUniformLocation(quadShaderProgram, "fade"), fadeValue);
+                glActiveTexture(GL_TEXTURE0);
                 glBindTexture(GL_TEXTURE_2D, exitTexture);
                 glDrawArrays(GL_TRIANGLES, 0, 6);
 

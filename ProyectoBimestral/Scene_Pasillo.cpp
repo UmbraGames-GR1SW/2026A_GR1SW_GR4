@@ -13,6 +13,7 @@
 extern enum SceneType { SCENE_PASILLO, SCENE_SAMY, SCENE_ANI, SCENE_MATTHEW, SCENE_JOSUE };
 extern SceneType g_CurrentScene;
 extern SceneType g_NextScene;
+extern int g_UnlockedLevel;
 
 namespace Pasillo {
     static unsigned int SCR_WIDTH = 1920;
@@ -22,12 +23,16 @@ namespace Pasillo {
     // ESTADOS PARA LA INTRODUCCIÓN CINEMÁTICA
     // -------------------------------------------------------------------------------------
     enum IntroPhase {
-        INTRO_WAIT_BLACK, // Segundos en negro inicial (antes de mostrar imagen)
-        INTRO_FADE_IN_IMG, // Aparece lentamente la imagen de bienvenida
-        INTRO_WAIT_ENTER,  // Muestra la imagen esperando el ENTER
-        INTRO_FADE_OUT_IMG,// Se desvanece la imagen a negro
-        INTRO_FADE_IN_GAME,// El negro se desvanece revelando el pasillo
-        INTRO_DONE         // El juego empieza normal
+        INTRO_WAIT_BLACK,      // Segundos en negro inicial (antes de mostrar imagen 1)
+        INTRO_FADE_IN_IMG_1,   // Aparece lentamente la imagen 1 de bienvenida
+        INTRO_WAIT_ENTER_1,    // Muestra la imagen 1 esperando el ENTER
+        INTRO_FADE_OUT_IMG_1,  // Se desvanece la imagen 1 a negro
+        INTRO_WAIT_BLACK_2,    // Breve espera en negro
+        INTRO_FADE_IN_IMG_2,   // Aparece lentamente la imagen 2
+        INTRO_WAIT_ENTER_2,    // Muestra la imagen 2 con texto renderizado encima
+        INTRO_FADE_OUT_IMG_2,  // Se desvanece la imagen 2 a negro
+        INTRO_FADE_IN_GAME,    // El negro se desvanece revelando el pasillo
+        INTRO_DONE             // El juego empieza normal
     };
     static IntroPhase introPhase = INTRO_DONE; // Inicializado en DONE para saltar la intro si ya se vio
     static bool firstTimeEver = true;         // Variable persistente
@@ -66,10 +71,17 @@ namespace Pasillo {
             glTexImage2D(GL_TEXTURE_2D, 0, format, width, height, 0, format, GL_UNSIGNED_BYTE, data);
             glGenerateMipmap(GL_TEXTURE_2D);
 
+            // Set explicit texture parameters for safety
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+
             stbi_image_free(data);
         }
         else
         {
+            std::cout << "ERROR::TEXTURE:: Failed to load " << path << ". Reason: " << stbi_failure_reason() << std::endl;
             // Fallback: Si no encuentra la imagen genera un pixel negro puro de forma segura
             glBindTexture(GL_TEXTURE_2D, textureID);
             unsigned char blackPixel[3] = { 0, 0, 0 };
@@ -125,9 +137,15 @@ namespace Pasillo {
 
         // Lógica del ENTER para avanzar la intro
         bool enterPressed = glfwGetKey(window, GLFW_KEY_ENTER) == GLFW_PRESS;
-        if (enterPressed && !enterPressedLastFrame && introPhase == INTRO_WAIT_ENTER) {
-            introPhase = INTRO_FADE_OUT_IMG;
-            introTimer = (float)glfwGetTime();
+        if (enterPressed && !enterPressedLastFrame) {
+            if (introPhase == INTRO_WAIT_ENTER_1) {
+                introPhase = INTRO_FADE_OUT_IMG_1;
+                introTimer = (float)glfwGetTime();
+            }
+            else if (introPhase == INTRO_WAIT_ENTER_2) {
+                introPhase = INTRO_FADE_OUT_IMG_2;
+                introTimer = (float)glfwGetTime();
+            }
         }
         enterPressedLastFrame = enterPressed;
 
@@ -176,14 +194,22 @@ namespace Pasillo {
         mKeyPressedLastFrame = mPressed;
 
         // Teclas para viajar a otras escenas (recuerdos) sin conflicto con WASD
-        if (glfwGetKey(window, GLFW_KEY_1) == GLFW_PRESS || glfwGetKey(window, GLFW_KEY_G) == GLFW_PRESS)
-            g_NextScene = SCENE_SAMY;
-        if (glfwGetKey(window, GLFW_KEY_2) == GLFW_PRESS || glfwGetKey(window, GLFW_KEY_I) == GLFW_PRESS)
-            g_NextScene = SCENE_ANI;
-        if (glfwGetKey(window, GLFW_KEY_3) == GLFW_PRESS || glfwGetKey(window, GLFW_KEY_T) == GLFW_PRESS)
-            g_NextScene = SCENE_MATTHEW;
-        if (glfwGetKey(window, GLFW_KEY_4) == GLFW_PRESS || glfwGetKey(window, GLFW_KEY_J) == GLFW_PRESS)
-            g_NextScene = SCENE_JOSUE;
+        if (glfwGetKey(window, GLFW_KEY_1) == GLFW_PRESS || glfwGetKey(window, GLFW_KEY_G) == GLFW_PRESS) {
+            if (g_UnlockedLevel >= 1)
+                g_NextScene = SCENE_SAMY;
+        }
+        if (glfwGetKey(window, GLFW_KEY_2) == GLFW_PRESS || glfwGetKey(window, GLFW_KEY_I) == GLFW_PRESS) {
+            if (g_UnlockedLevel >= 2)
+                g_NextScene = SCENE_ANI;
+        }
+        if (glfwGetKey(window, GLFW_KEY_3) == GLFW_PRESS || glfwGetKey(window, GLFW_KEY_T) == GLFW_PRESS) {
+            if (g_UnlockedLevel >= 3)
+                g_NextScene = SCENE_MATTHEW;
+        }
+        if (glfwGetKey(window, GLFW_KEY_4) == GLFW_PRESS || glfwGetKey(window, GLFW_KEY_J) == GLFW_PRESS) {
+            if (g_UnlockedLevel >= 4)
+                g_NextScene = SCENE_JOSUE;
+        }
     }
 
     void RunScene(GLFWwindow* window)
@@ -207,9 +233,13 @@ namespace Pasillo {
             introPhase = INTRO_WAIT_BLACK;
             introTimer = static_cast<float>(glfwGetTime());
             firstTimeEver = false;
+            // Cargar fuentes para la intro
+            InitFreeType("fonts/Bevan-Regular.ttf");
         }
         else {
             introPhase = INTRO_DONE;
+            // Cargar fuentes normales del juego
+            InitFreeType("fonts/arial.ttf");
         }
 
         // Shaders
@@ -219,11 +249,9 @@ namespace Pasillo {
         // Cargar modelo del pasillo
         Model pasilloModel("./model/pasillo/pasillo.obj");
 
-        // Cargar fuentes
-        InitFreeType("fonts/arial.ttf");
-
         // ---- CONFIGURACIÓN DEL QUAD Y SHADERS PARA LA PANTALLA DE INTRO ----
         unsigned int introTexture = loadTexture("./model/pasillo/intro_message.jpg"); // Asegúrate de tener esta imagen
+        unsigned int introTexture2 = loadTexture("./model/pasillo/intro_message_2.png");
 
         float quadVertices[] = {
             // Posiciones   // Texturas
@@ -259,6 +287,8 @@ namespace Pasillo {
         glAttachShader(quadShaderProgram, vertex);
         glAttachShader(quadShaderProgram, fragment);
         glLinkProgram(quadShaderProgram);
+        glUseProgram(quadShaderProgram);
+        glUniform1i(glGetUniformLocation(quadShaderProgram, "screenTexture"), 0);
         glDeleteShader(vertex);
         glDeleteShader(fragment);
 
@@ -292,29 +322,64 @@ namespace Pasillo {
                 float fadeValue = 0.0f;
                 float fadeDuration = 2.0f; // Duración de los difuminados
                 bool drawGameBehind = false;
+                unsigned int currentIntroTex = introTexture;
 
                 if (introPhase == INTRO_WAIT_BLACK)
                 {
                     if (currentFrame - introTimer >= 1.5f) {
-                        introPhase = INTRO_FADE_IN_IMG;
+                        introPhase = INTRO_FADE_IN_IMG_1;
                         introTimer = currentFrame;
                     }
                 }
-                else if (introPhase == INTRO_FADE_IN_IMG)
+                else if (introPhase == INTRO_FADE_IN_IMG_1)
                 {
+                    currentIntroTex = introTexture;
                     float progress = (currentFrame - introTimer) / fadeDuration;
                     fadeValue = glm::clamp(progress, 0.0f, 1.0f);
                     if (progress >= 1.0f) {
-                        introPhase = INTRO_WAIT_ENTER;
+                        introPhase = INTRO_WAIT_ENTER_1;
                     }
                 }
-                else if (introPhase == INTRO_WAIT_ENTER)
+                else if (introPhase == INTRO_WAIT_ENTER_1)
                 {
+                    currentIntroTex = introTexture;
                     fadeValue = 1.0f;
-                    // Se queda esperando estático el ENTER (sin renderizar texto extra encima)
                 }
-                else if (introPhase == INTRO_FADE_OUT_IMG)
+                else if (introPhase == INTRO_FADE_OUT_IMG_1)
                 {
+                    currentIntroTex = introTexture;
+                    float progress = (currentFrame - introTimer) / fadeDuration;
+                    fadeValue = 1.0f - glm::clamp(progress, 0.0f, 1.0f);
+                    if (progress >= 1.0f) {
+                        introPhase = INTRO_WAIT_BLACK_2;
+                        introTimer = currentFrame;
+                    }
+                }
+                else if (introPhase == INTRO_WAIT_BLACK_2)
+                {
+                    fadeValue = 0.0f;
+                    if (currentFrame - introTimer >= 1.0f) { // 1 segundo de negro intermedio
+                        introPhase = INTRO_FADE_IN_IMG_2;
+                        introTimer = currentFrame;
+                    }
+                }
+                else if (introPhase == INTRO_FADE_IN_IMG_2)
+                {
+                    currentIntroTex = introTexture2;
+                    float progress = (currentFrame - introTimer) / fadeDuration;
+                    fadeValue = glm::clamp(progress, 0.0f, 1.0f);
+                    if (progress >= 1.0f) {
+                        introPhase = INTRO_WAIT_ENTER_2;
+                    }
+                }
+                else if (introPhase == INTRO_WAIT_ENTER_2)
+                {
+                    currentIntroTex = introTexture2;
+                    fadeValue = 1.0f;
+                }
+                else if (introPhase == INTRO_FADE_OUT_IMG_2)
+                {
+                    currentIntroTex = introTexture2;
                     float progress = (currentFrame - introTimer) / fadeDuration;
                     fadeValue = 1.0f - glm::clamp(progress, 0.0f, 1.0f);
                     if (progress >= 1.0f) {
@@ -326,12 +391,51 @@ namespace Pasillo {
                 {
                     drawGameBehind = true;
                     introPhase = INTRO_DONE;
+                    InitFreeType("fonts/arial.ttf"); // Restaurar Arial para el HUD del juego
                 }
 
                 if (!drawGameBehind) {
                     glUniform1f(glGetUniformLocation(quadShaderProgram, "fade"), fadeValue);
-                    glBindTexture(GL_TEXTURE_2D, introTexture);
+                    glActiveTexture(GL_TEXTURE0);
+                    glBindTexture(GL_TEXTURE_2D, currentIntroTex);
                     glDrawArrays(GL_TRIANGLES, 0, 6);
+
+                    // Renderizar textos sobre el quad de introducción
+                    float sw = static_cast<float>(SCR_WIDTH);
+                    float sh = static_cast<float>(SCR_HEIGHT);
+
+                    if (introPhase == INTRO_FADE_IN_IMG_2 || introPhase == INTRO_WAIT_ENTER_2 || introPhase == INTRO_FADE_OUT_IMG_2) {
+                        float scale = 0.7f;
+                        float lineSpacing = 65.0f;
+                        float startY = sh / 2.0f + 120.0f;
+
+                        const char* introLines[] = {
+                            "Elena despierta en el pabellon 9 sin recordar porque esta en ese lugar.",
+                            "Cada puerta esconde un fragmento de su mente que ella misma",
+                            "enterro para sobrevivir.",
+                            "Para transcender, primero debe recordar."
+                        };
+                        int numLines = 4;
+
+                        for (int i = 0; i < numLines; ++i) {
+                            float w = GetTextWidth(introLines[i], scale);
+                            float x = (sw - w) / 2.0f;
+                            float y = startY - i * lineSpacing;
+                            RenderText(textShader, introLines[i], x, y, scale, glm::vec3(0.0f, 0.0f, 0.0f), sw, sh, fadeValue);
+                        }
+                    }
+
+                    // Mensajes para continuar con ENTER
+                    if (introPhase == INTRO_WAIT_ENTER_1) {
+                        std::string continueText = "[ Presione ENTER para ingresar ]";
+                        float cw = GetTextWidth(continueText, 0.4f);
+                        RenderText(textShader, continueText, (sw - cw) / 2.0f, 80.0f, 0.4f, glm::vec3(0.7f, 0.7f, 0.7f), sw, sh);
+                    }
+                    else if (introPhase == INTRO_WAIT_ENTER_2) {
+                        std::string continueText = "[ Presione ENTER para ingresar ]";
+                        float cw = GetTextWidth(continueText, 0.5f);
+                        RenderText(textShader, continueText, (sw - cw) / 2.0f, 80.0f, 0.5f, glm::vec3(0.0f, 0.0f, 0.0f), sw, sh);
+                    }
 
                     glfwSwapBuffers(window);
                     glfwPollEvents();
@@ -431,10 +535,22 @@ namespace Pasillo {
                 RenderText(textShader, "M: Ocultar/mostrar Menu", 50.0f, startY - 6 * stepY, 0.5f, glm::vec3(1.0f, 1.0f, 1.0f), sw, sh);
 
                 RenderText(textShader, "Seleccione una puerta (recuerdo):", 50.0f, startY - 8 * stepY, 0.5f, glm::vec3(0.9f, 0.8f, 0.8f), sw, sh);
-                RenderText(textShader, "1 o G -> Garage", 50.0f, startY - 9 * stepY, 0.5f, glm::vec3(0.9f, 0.2f, 0.2f), sw, sh);
-                RenderText(textShader, "2 o I -> Infancia", 50.0f, startY - 10 * stepY, 0.5f, glm::vec3(0.9f, 0.2f, 0.2f), sw, sh);
-                RenderText(textShader, "3 o T -> Navidad", 50.0f, startY - 11 * stepY, 0.5f, glm::vec3(0.9f, 0.2f, 0.2f), sw, sh);
-                RenderText(textShader, "4 o J -> Final", 50.0f, startY - 12 * stepY, 0.5f, glm::vec3(0.9f, 0.2f, 0.2f), sw, sh);
+                RenderText(textShader, "1 o G -> Garage", 50.0f, startY - 9 * stepY, 0.5f, glm::vec3(0.2f, 0.9f, 0.2f), sw, sh);
+
+                if (g_UnlockedLevel >= 2)
+                    RenderText(textShader, "2 o I -> Infancia", 50.0f, startY - 10 * stepY, 0.5f, glm::vec3(0.2f, 0.9f, 0.2f), sw, sh);
+                else
+                    RenderText(textShader, "2 o I -> [BLOQUEADO] Infancia", 50.0f, startY - 10 * stepY, 0.5f, glm::vec3(0.5f, 0.5f, 0.5f), sw, sh);
+
+                if (g_UnlockedLevel >= 3)
+                    RenderText(textShader, "3 o T -> Navidad", 50.0f, startY - 11 * stepY, 0.5f, glm::vec3(0.2f, 0.9f, 0.2f), sw, sh);
+                else
+                    RenderText(textShader, "3 o T -> [BLOQUEADO] Navidad", 50.0f, startY - 11 * stepY, 0.5f, glm::vec3(0.5f, 0.5f, 0.5f), sw, sh);
+
+                if (g_UnlockedLevel >= 4)
+                    RenderText(textShader, "4 o J -> Final", 50.0f, startY - 12 * stepY, 0.5f, glm::vec3(0.2f, 0.9f, 0.2f), sw, sh);
+                else
+                    RenderText(textShader, "4 o J -> [BLOQUEADO] Final", 50.0f, startY - 12 * stepY, 0.5f, glm::vec3(0.5f, 0.5f, 0.5f), sw, sh);
             }
 
             glfwSwapBuffers(window);

@@ -12,6 +12,7 @@
 #include <learnopengl/camera.h>
 #include <learnopengl/model.h>
 #include <learnopengl/audio.h>
+#include <learnopengl/text_renderer.h>
 
 #include <iostream>
 #include <string>
@@ -22,6 +23,7 @@
 extern enum SceneType { SCENE_PASILLO, SCENE_SAMY, SCENE_ANI, SCENE_MATTHEW, SCENE_JOSUE };
 extern SceneType g_CurrentScene;
 extern SceneType g_NextScene;
+extern int g_UnlockedLevel;
 
 namespace Josue {
     void framebuffer_size_callback(GLFWwindow* window, int width, int height);
@@ -55,6 +57,7 @@ namespace Josue {
     };
     static GameState gameState = PLAYING;
     static float stateTimer = 0.0f;
+    static int selectedOption = 0; // 0 = Aceptar mi destino, 1 = No aceptar
 
     // =========================================================
     // ESCALA Y POSICIÓN
@@ -123,6 +126,7 @@ namespace Josue {
         // Reiniciar variables de estado locales
         gameState = PLAYING;
         stateTimer = 0.0f;
+        selectedOption = 0;
         camera = Camera(glm::vec3(0.0f, 1.2f, 1.0f), glm::vec3(0.0f, 1.0f, 0.0f), 90.0f, 0.0f);
         firstMouse = true;
         entityPos = glm::vec3(0.0f, 0.0f, -25.0f);
@@ -142,6 +146,10 @@ namespace Josue {
         Shader ourShader("shaders/Vertex_Josue.vs", "shaders/Fragment_Josue.fs");
         Model exitModel("./model/exit/exit.obj");
         Model entidadModel("./model/exit/entidad.obj");
+
+        // Cargar fuentes para el menú interactivo final
+        InitFreeType("fonts/arial.ttf");
+        Shader textShader("shaders/text_samy.vs", "shaders/text_samy.fs");
 
         // Cargar texturas para las pantallas completas (Jumpscare y Final)
         unsigned int screamTexture = loadTexture("./model/exit/scream.jpeg");
@@ -185,6 +193,8 @@ namespace Josue {
         glAttachShader(quadShaderProgram, vertex);
         glAttachShader(quadShaderProgram, fragment);
         glLinkProgram(quadShaderProgram);
+        glUseProgram(quadShaderProgram);
+        glUniform1i(glGetUniformLocation(quadShaderProgram, "screenTexture"), 0);
         glDeleteShader(vertex);
         glDeleteShader(fragment);
 
@@ -355,6 +365,7 @@ namespace Josue {
                 glDisable(GL_DEPTH_TEST);
                 glUseProgram(quadShaderProgram);
                 glUniform1f(glGetUniformLocation(quadShaderProgram, "fade"), 1.0f); // Sin difuminado para el screamer
+                glActiveTexture(GL_TEXTURE0);
                 glBindVertexArray(quadVAO);
                 glBindTexture(GL_TEXTURE_2D, screamTexture);
                 glDrawArrays(GL_TRIANGLES, 0, 6);
@@ -446,8 +457,31 @@ namespace Josue {
 
                 // Enviar la transparencia al shader y dibujar
                 glUniform1f(glGetUniformLocation(quadShaderProgram, "fade"), fadeValue);
+                glActiveTexture(GL_TEXTURE0);
                 glBindTexture(GL_TEXTURE_2D, currentTexture);
                 glDrawArrays(GL_TRIANGLES, 0, 6);
+
+                if (gameState == ENDING_WAIT_ENTER) {
+                    float sw = static_cast<float>(SCR_WIDTH);
+                    float sh = static_cast<float>(SCR_HEIGHT);
+
+                    // Título de Escoge tu destino
+                    std::string promptText = "Escoge tu destino:";
+                    float wp = GetTextWidth(promptText, 0.5f);
+                    RenderText(textShader, promptText, (sw - wp) / 2.0f, sh / 2.0f - 30.0f, 0.5f, glm::vec3(0.9f, 0.9f, 0.9f), sw, sh);
+
+                    // Opción 1
+                    std::string opt1 = (selectedOption == 0) ? "> ACEPTAR MI DESTINO <" : "ACEPTAR MI DESTINO";
+                    glm::vec3 col1 = (selectedOption == 0) ? glm::vec3(1.0f, 0.2f, 0.2f) : glm::vec3(0.7f, 0.7f, 0.7f);
+                    float w1 = GetTextWidth(opt1, 0.6f);
+                    RenderText(textShader, opt1, (sw - w1) / 2.0f, sh / 2.0f - 100.0f, 0.6f, col1, sw, sh);
+
+                    // Opción 2
+                    std::string opt2 = (selectedOption == 1) ? "> NO ACEPTAR <" : "NO ACEPTAR";
+                    glm::vec3 col2 = (selectedOption == 1) ? glm::vec3(1.0f, 0.2f, 0.2f) : glm::vec3(0.7f, 0.7f, 0.7f);
+                    float w2 = GetTextWidth(opt2, 0.6f);
+                    RenderText(textShader, opt2, (sw - w2) / 2.0f, sh / 2.0f - 180.0f, 0.6f, col2, sw, sh);
+                }
             }
 
             glfwSwapBuffers(window);
@@ -480,10 +514,17 @@ namespace Josue {
             glTexImage2D(GL_TEXTURE_2D, 0, format, width, height, 0, format, GL_UNSIGNED_BYTE, data);
             glGenerateMipmap(GL_TEXTURE_2D);
 
+            // Set explicit texture parameters for safety
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+
             stbi_image_free(data);
         }
         else
         {
+            std::cout << "ERROR::TEXTURE:: Failed to load " << path << ". Reason: " << stbi_failure_reason() << std::endl;
             // Fallback: Si no encuentra la imagen genera un pixel negro puro de forma segura
             glBindTexture(GL_TEXTURE_2D, textureID);
             unsigned char blackPixel[3] = { 0, 0, 0 };
@@ -506,10 +547,38 @@ namespace Josue {
         if (glfwGetKey(window, GLFW_KEY_ESCAPE) == GLFW_PRESS)
             glfwSetWindowShouldClose(window, true);
 
-        // Si estamos en la pantalla final, solo esperar al ENTER para salir
+        // Si estamos en la pantalla final, navegar opciones y confirmar
         if (gameState == ENDING_WAIT_ENTER) {
+            // Teclas flecha arriba o W
+            if (glfwGetKey(window, GLFW_KEY_UP) == GLFW_PRESS || glfwGetKey(window, GLFW_KEY_W) == GLFW_PRESS) {
+                if (!upKeyPressedLastFrame) {
+                    selectedOption = 0;
+                    upKeyPressedLastFrame = true;
+                }
+            }
+            else {
+                upKeyPressedLastFrame = false;
+            }
+
+            // Teclas flecha abajo o S
+            if (glfwGetKey(window, GLFW_KEY_DOWN) == GLFW_PRESS || glfwGetKey(window, GLFW_KEY_S) == GLFW_PRESS) {
+                if (!downKeyPressedLastFrame) {
+                    selectedOption = 1;
+                    downKeyPressedLastFrame = true;
+                }
+            }
+            else {
+                downKeyPressedLastFrame = false;
+            }
+
             if (glfwGetKey(window, GLFW_KEY_ENTER) == GLFW_PRESS) {
-                glfwSetWindowShouldClose(window, true); // Cierra el juego
+                if (selectedOption == 0) {
+                    // ACEPTAR MI DESTINO -> Cerrar el juego
+                    glfwSetWindowShouldClose(window, true);
+                } else {
+                    // NO ACEPTAR -> Regresar al Pasillo
+                    g_NextScene = SCENE_PASILLO;
+                }
             }
             return; // Bloquea todos los demás movimientos
         }
