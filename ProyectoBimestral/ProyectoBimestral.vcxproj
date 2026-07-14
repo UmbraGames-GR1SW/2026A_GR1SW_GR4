@@ -155,6 +155,10 @@
   </ItemGroup>
   <ItemGroup>
     <None Include="shaders\Fragment_Samy.fs" />
+    <None Include="shaders\light_billboard.fs" />
+    <None Include="shaders\light_billboard.vs" />
+    <None Include="shaders\model_loading.fs" />
+    <None Include="shaders\model_loading.vs" />
     <None Include="shaders\text_samy.fs" />
     <None Include="shaders\text_samy.vs" />
     <None Include="shaders\Vertex_Samy.vs" />
