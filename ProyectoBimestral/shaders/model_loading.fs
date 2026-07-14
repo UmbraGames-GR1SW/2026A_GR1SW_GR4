@@ -1,6 +1,7 @@
 #version 330 core
 #define MAX_RED_LIGHTS 9
 #define MAX_ORNAMENT_LIGHTS 10
+#define MAX_ZOMBIE_EYES 8
 
 out vec4 FragColor;
 
@@ -26,6 +27,13 @@ uniform vec3 ornamentLightPositions[MAX_ORNAMENT_LIGHTS];
 uniform vec3 ornamentLightColors[MAX_ORNAMENT_LIGHTS];
 uniform float ornamentLightIntensities[MAX_ORNAMENT_LIGHTS];
 uniform int numOrnamentLights;
+
+// Ojos de los zombies: brillo corto y muy localizado, reactivo a la
+// cercania del jugador (la intensidad la calcula el C++ cada frame)
+uniform vec3 zombieEyePositions[MAX_ZOMBIE_EYES];
+uniform float zombieEyeIntensities[MAX_ZOMBIE_EYES];
+uniform int numZombieEyes;
+uniform vec3 zombieEyeColor;
 
 uniform float materialShininess;
 
@@ -122,7 +130,19 @@ void main()
         ornaments += ornamentLightColors[i] * contribution;
     }
 
-    vec3 result = neutral + red + ornaments;
+    // Ojos de zombie: brillo puntual muy chico y localizado. No se
+    // multiplica por texColor (asi se ve como una brasa brillando, no
+    // como una luz iluminando la superficie de al lado) -- solo el halo
+    // cerca del punto exacto del ojo.
+    vec3 eyesGlow = vec3(0.0);
+    for (int i = 0; i < numZombieEyes; i++)
+    {
+        float dist = length(zombieEyePositions[i] - FragPos);
+        float glow = 1.0 / (1.0 + 4.0 * dist + 10.0 * dist * dist);
+        eyesGlow += zombieEyeColor * glow * zombieEyeIntensities[i];
+    }
+
+    vec3 result = neutral + red + ornaments + eyesGlow;
 
     float fogFactor = 1.0 - exp(-fogDensity * flDistance * flDistance);
     fogFactor = clamp(fogFactor, 0.0, 1.0);

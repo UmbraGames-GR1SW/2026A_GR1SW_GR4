@@ -86,7 +86,7 @@ const float REPEATED_MODEL_TARGET_HEIGHT = 1.6f; // altura aproximada, ajustable
 const bool  REPEATED_MODEL_IS_Z_UP = false;
 const bool  REPEATED_MODEL_ADD_COLLISION = true;
 const int   REPEATED_MODEL_COUNT = 4;            // 4 puntas de la X
-const float REPEATED_MODEL_RADIUS_FROM_TREE = 4.3f; // punto intermedio: deja paso libre sin quedar muy lejos
+const float REPEATED_MODEL_RADIUS_FROM_TREE = 2.8f; // mas cerca del arbol, lejos de la columna
 
 // Temblor/sacudida de los zombies: saltos bruscos a un nuevo angulo cada
 // tanto (no una animacion suave), como un cuerpo roto/rigido. Subido
@@ -138,6 +138,44 @@ const glm::vec3 ZOMBIE_ARM_SWING_AXIS = glm::vec3(1.0f, 0.0f, 0.0f); // X = subi
 
 std::vector<int> manualZombieHeadMeshIndices = { };
 std::vector<int> manualZombieArmMeshIndices = { };
+
+// -----------------------------------------------------------
+// Ojos brillantes que REACCIONAN a la cercania del jugador: lejos, casi
+// no se notan y el cuerpo se mueve poco; cerca, brillan mas fuerte,
+// parpadean mas rapido y el temblor del cuerpo se intensifica -- da la
+// sensacion de que "te nota", en vez de un loop pasivo siempre igual.
+// -----------------------------------------------------------
+const bool  ZOMBIE_EYES_ENABLED = false; // se veia raro/antinatural, desactivado -- reemplazado por el screamer
+const glm::vec3 ZOMBIE_EYE_COLOR = glm::vec3(1.0f, 0.15f, 0.0f); // naranja-rojo brasa
+const float ZOMBIE_EYE_SEPARATION_FRAC = 0.10f;      // separacion entre ojos, como % del ANCHO del modelo
+const float ZOMBIE_EYE_HEIGHT_OFFSET_FRAC = 0.015f;  // cuanto sobresalen por encima del torso, como % de la ALTURA
+const float ZOMBIE_EYE_BASE_INTENSITY = 0.5f;
+const float ZOMBIE_EYE_CLOSE_INTENSITY = 2.2f;  // intensidad maxima cuando el jugador esta muy cerca
+const float ZOMBIE_EYE_PULSE_SPEED_FAR = 1.0f;
+const float ZOMBIE_EYE_PULSE_SPEED_CLOSE = 5.0f; // parpadeo mucho mas rapido/nervioso de cerca
+
+// Radio de "deteccion": mas alla de esto, comportamiento normal/pasivo.
+// A partir de aca, todo se intensifica gradualmente segun que tan cerca estes.
+const float ZOMBIE_PROXIMITY_RADIUS = 5.0f;
+const float ZOMBIE_PROXIMITY_TWITCH_BOOST = 2.5f; // multiplica el temblor cuando estas pegado
+const float ZOMBIE_PROXIMITY_SWAY_BOOST = 2.0f;
+
+// -----------------------------------------------------------
+// Screamer: si mantenes la mirada sobre un zombie (dentro de un cono
+// estrecho, a distancia razonable) por varios segundos seguidos, se
+// dispara un susto: flash violento + linterna estroboscopica + golpe
+// de zoom en camara. Tiene enfriamiento global para que no se repita
+// todo el tiempo.
+// -----------------------------------------------------------
+const bool  ZOMBIE_SCREAMER_ENABLED = true;
+const float ZOMBIE_SCREAMER_STARE_DURATION = 3.0f;  // segundos mirando fijo para disparar
+const float ZOMBIE_SCREAMER_MAX_DISTANCE = 8.0f;    // no cuenta si esta demasiado lejos
+const float ZOMBIE_SCREAMER_FOV_ANGLE_DEG = 12.0f;  // que tan centrado en pantalla tiene que estar
+const float ZOMBIE_SCREAMER_EFFECT_DURATION = 0.5f; // cuanto dura el golpe visual
+const float ZOMBIE_SCREAMER_COOLDOWN = 25.0f;       // minimo entre sustos
+const float ZOMBIE_SCREAMER_ZOOM_PUNCH = 24.0f;     // grados de FOV que se suman de golpe
+const float ZOMBIE_SCREAMER_LINGER_DURATION = 2.0f; // la tension no vuelve a cero de golpe despues del susto
+
 const float REPEATED_MODEL_COLLISION_MARGIN = 0.4f;
 const bool  REPEATED_MODEL_FACE_CENTER = true;   // gira cada instancia mirando hacia el arbol
 const float REPEATED_MODEL_YAW_OFFSET_DEG = 0.0f; // ajustar +-90/180 si quedan mirando al reves
@@ -318,6 +356,12 @@ float g_blackoutEndTime = 0.0f;
 // de linterna). -1000 = nunca, asi el primer frame no dispara nada.
 float g_startleTriggerTime = -1000.0f;
 const float STARTLE_FLASH_DURATION = 0.18f;
+
+// Estado del screamer (mirar fijo a un zombie)
+bool g_screamerActive = false;
+float g_screamerEndTime = -1000.0f;
+float g_screamerCooldownUntil = -1000.0f;
+std::vector<float> g_zombieGazeTimer;
 
 // Apagon real por foco: cada luz roja tiene su propio ciclo de
 // encendido/apagado (periodo y duracion del apagon distintos entre si,
@@ -1035,6 +1079,14 @@ int main()
     Model* repeatedModel = nullptr;
     std::vector<RepeatedInstance> repeatedInstances;
     std::vector<ZombiePart> zombieParts;
+    glm::vec3 eyeLeftLocal(0.0f), eyeRightLocal(0.0f);
+    // Pivote local (centro horizontal + base) del modelo repetido. Se usa
+    // para rotar cada instancia alrededor de SU PROPIO centro en vez de
+    // alrededor del origen local -- si no, al rotar para mirar al arbol,
+    // el cuerpo se desplaza de la posicion que se valido como libre y
+    // puede terminar metido en una columna.
+    glm::vec3 repeatedPivotLocal(0.0f);
+    std::vector<bool> g_zombieWasClose; // para loguear la transicion "te nota"
     if (ADD_REPEATED_MODEL)
     {
         repeatedModel = new Model(REPEATED_MODEL_PATH);
@@ -1049,8 +1101,29 @@ int main()
         float rHeight = rSize.y;
         float repeatedScale = (rHeight > 0.0001f) ? (REPEATED_MODEL_TARGET_HEIGHT / rHeight) : 1.0f;
         glm::vec2 rLocalCenterXZ((rmin.x + rmax.x) * 0.5f, (rmin.z + rmax.z) * 0.5f);
-        float rFootprintRadius = 0.5f * std::max(rSize.x, rSize.z) * repeatedScale + REPEATED_MODEL_COLLISION_MARGIN;
+        repeatedPivotLocal = glm::vec3(rLocalCenterXZ.x, rmin.y, rLocalCenterXZ.y);
+        // El radio reservado al buscar lugar libre tiene que contemplar
+        // tambien el vaiven de posicion que se le suma en el render loop
+        // (ZOMBIE_SWAY_RADIUS, hasta *ZOMBIE_PROXIMITY_SWAY_BOOST de cerca).
+        // Si no se lo suma aca, el cuerpo puede terminar rozando una
+        // columna o pared que el hueco original si dejaba libre en reposo.
+        float maxSwayReach = ZOMBIE_SWAY_RADIUS * ZOMBIE_PROXIMITY_SWAY_BOOST;
+        float rFootprintRadius = 0.5f * std::max(rSize.x, rSize.z) * repeatedScale + REPEATED_MODEL_COLLISION_MARGIN + maxSwayReach;
         float floorY = g_worldAABB.min.y;
+
+        // Pivotes locales de los "ojos": justo por encima de la parte mas
+        // alta del torso, separados a los lados -- funciona aunque no haya
+        // una malla de cabeza real (de hecho, ojos flotando justo arriba
+        // de un torso sin cabeza es bastante mas inquietante).
+        float eyeSeparation = (rmax.x - rmin.x) * ZOMBIE_EYE_SEPARATION_FRAC;
+        float eyeHeightOffset = (rmax.y - rmin.y) * ZOMBIE_EYE_HEIGHT_OFFSET_FRAC;
+        glm::vec3 eyeBaseLocal((rmin.x + rmax.x) * 0.5f, rmax.y + eyeHeightOffset, (rmin.z + rmax.z) * 0.5f);
+        eyeLeftLocal = eyeBaseLocal + glm::vec3(-eyeSeparation * 0.5f, 0.0f, 0.0f);
+        eyeRightLocal = eyeBaseLocal + glm::vec3(eyeSeparation * 0.5f, 0.0f, 0.0f);
+
+        std::cout << "[DEBUG] Ojos: separacion local=" << eyeSeparation
+            << " offset altura local=" << eyeHeightOffset
+            << " (equivale a " << eyeHeightOffset * repeatedScale << " unidades de mundo sobre el torso)" << std::endl;
 
         std::cout << "[DEBUG] Modelo repetido cargado. Escala=" << repeatedScale
             << " (altura local=" << rHeight << " -> objetivo=" << REPEATED_MODEL_TARGET_HEIGHT << ")" << std::endl;
@@ -1143,11 +1216,9 @@ int main()
                 }
             }
 
-            glm::vec3 worldPos(
-                finalRXZ.x - rLocalCenterXZ.x * repeatedScale,
-                floorY - rmin.y * repeatedScale,
-                finalRXZ.y - rLocalCenterXZ.y * repeatedScale
-            );
+            // Punto de mundo donde debe terminar el pivote (centro horizontal
+            // + base) de esta instancia, sin importar el angulo de rotacion.
+            glm::vec3 worldPivotTarget(finalRXZ.x, floorY, finalRXZ.y);
 
             float yawDeg = 0.0f;
             if (REPEATED_MODEL_FACE_CENTER)
@@ -1156,18 +1227,23 @@ int main()
                 yawDeg = glm::degrees(atan2f(toCenter.x, toCenter.y)) + REPEATED_MODEL_YAW_OFFSET_DEG;
             }
 
-            // Matriz base (sin temblor) para calcular la colision, que no
-            // necesita actualizarse cada frame por un movimiento tan chico.
-            glm::mat4 baseMatrix = glm::translate(glm::mat4(1.0f), worldPos);
+            // Matriz base (sin temblor) para calcular la colision. La
+            // rotacion se hace alrededor del PIVOTE del modelo (centro
+            // horizontal + base), no del origen local -- si no, al girar
+            // cada instancia para mirar al arbol, el cuerpo se corre de la
+            // posicion que se valido como libre y puede meterse en una
+            // columna que la busqueda de lugar libre si habia esquivado.
+            glm::mat4 baseMatrix = glm::translate(glm::mat4(1.0f), worldPivotTarget);
             baseMatrix = glm::rotate(baseMatrix, glm::radians(yawDeg), glm::vec3(0.0f, 1.0f, 0.0f));
             if (REPEATED_MODEL_IS_Z_UP)
                 baseMatrix = glm::rotate(baseMatrix, glm::radians(-90.0f), glm::vec3(1.0f, 0.0f, 0.0f));
             baseMatrix = glm::scale(baseMatrix, glm::vec3(repeatedScale));
+            baseMatrix = glm::translate(baseMatrix, -repeatedPivotLocal);
 
             if (REPEATED_MODEL_ADD_COLLISION)
                 AddModelCollision(*repeatedModel, baseMatrix, floorY);
 
-            repeatedInstances.push_back({ worldPos, yawDeg, repeatedScale });
+            repeatedInstances.push_back({ worldPivotTarget, yawDeg, repeatedScale });
 
             std::cout << "[DEBUG] Instancia " << i << " del modelo repetido en (" << finalRXZ.x << ", " << finalRXZ.y << ")" << std::endl;
         }
@@ -1265,12 +1341,25 @@ int main()
 
         processInput(window);
 
+        // Reseteo del estado del screamer cuando termina su ventana de efecto
+        if (g_screamerActive && currentFrame >= g_screamerEndTime)
+            g_screamerActive = false;
+
         glClearColor(0.05f, 0.05f, 0.05f, 1.0f);
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
         ourShader.use();
 
-        glm::mat4 projection = glm::perspective(glm::radians(camera.Zoom),
+        // Golpe de zoom durante el screamer: el FOV salta de golpe y se
+        // relaja hasta volver a lo normal en ZOMBIE_SCREAMER_EFFECT_DURATION.
+        float screamerZoomPunch = 0.0f;
+        if (g_screamerActive)
+        {
+            float progress = glm::clamp((g_screamerEndTime - currentFrame) / ZOMBIE_SCREAMER_EFFECT_DURATION, 0.0f, 1.0f);
+            screamerZoomPunch = ZOMBIE_SCREAMER_ZOOM_PUNCH * progress;
+        }
+
+        glm::mat4 projection = glm::perspective(glm::radians(camera.Zoom + screamerZoomPunch),
             (float)SCR_WIDTH / (float)SCR_HEIGHT, 0.1f, 500.0f);
         glm::mat4 view = camera.GetViewMatrix();
         ourShader.setMat4("projection", projection);
@@ -1323,6 +1412,10 @@ int main()
         // no se recupera aunque el parpadeo "quisiera" subir.
         if (g_inBlackout)
             flashlightFlicker = 0.0f;
+
+        // El screamer pisa el parpadeo normal con un estrobo violento
+        if (g_screamerActive)
+            flashlightFlicker = (fmodf(currentFrame * 40.0f, 1.0f) > 0.5f) ? 1.5f : 0.0f;
 
         ourShader.setFloat("flashlightFlicker", flashlightFlicker);
 
@@ -1457,25 +1550,79 @@ int main()
         // propio pivote (cuello/hombro).
         if (repeatedModel)
         {
+            std::vector<glm::vec3> currentEyePositions;
+            std::vector<float> currentEyeIntensities;
+
+            if (g_zombieWasClose.size() != repeatedInstances.size())
+                g_zombieWasClose.assign(repeatedInstances.size(), false);
+            if (g_zombieGazeTimer.size() != repeatedInstances.size())
+                g_zombieGazeTimer.assign(repeatedInstances.size(), 0.0f);
+
             for (size_t i = 0; i < repeatedInstances.size(); i++)
             {
                 auto& inst = repeatedInstances[i];
 
+                // -------- Proximidad al jugador: 0 = lejos/pasivo, 1 = muy cerca --------
+                float distToPlayer = glm::length(glm::vec2(camera.Position.x, camera.Position.z) - glm::vec2(inst.worldPos.x, inst.worldPos.z));
+                float proximity = glm::clamp(1.0f - distToPlayer / ZOMBIE_PROXIMITY_RADIUS, 0.0f, 1.0f);
+
+                bool isClose = proximity > 0.5f;
+                if (isClose != g_zombieWasClose[i])
+                {
+                    if (isClose)
+                        std::cout << "[DEBUG] Zombie " << i << " te noto." << std::endl;
+                    g_zombieWasClose[i] = isClose;
+                }
+
+                // -------- Screamer: mirada sostenida --------
+                if (ZOMBIE_SCREAMER_ENABLED)
+                {
+                    glm::vec3 gazeTarget = inst.worldPos + glm::vec3(0.0f, REPEATED_MODEL_TARGET_HEIGHT * 0.6f, 0.0f);
+                    glm::vec3 toZombie = gazeTarget - camera.Position;
+                    float distToGaze = glm::length(toZombie);
+                    bool looking = false;
+                    if (distToGaze > 0.001f && distToGaze < ZOMBIE_SCREAMER_MAX_DISTANCE)
+                    {
+                        glm::vec3 dirToZombie = toZombie / distToGaze;
+                        float angleCos = glm::dot(glm::normalize(camera.Front), dirToZombie);
+                        looking = angleCos > cosf(glm::radians(ZOMBIE_SCREAMER_FOV_ANGLE_DEG));
+                    }
+
+                    if (looking)
+                        g_zombieGazeTimer[i] += deltaTime;
+                    else
+                        g_zombieGazeTimer[i] = glm::max(0.0f, g_zombieGazeTimer[i] - deltaTime * 2.0f);
+
+                    if (g_zombieGazeTimer[i] >= ZOMBIE_SCREAMER_STARE_DURATION &&
+                        currentFrame >= g_screamerCooldownUntil && !g_screamerActive)
+                    {
+                        g_screamerActive = true;
+                        g_screamerEndTime = currentFrame + ZOMBIE_SCREAMER_EFFECT_DURATION;
+                        g_screamerCooldownUntil = currentFrame + ZOMBIE_SCREAMER_COOLDOWN;
+                        g_zombieGazeTimer[i] = 0.0f;
+                        g_startleTriggerTime = currentFrame; // reusa el flash existente
+                        std::cout << "[DEBUG] *** SCREAMER *** Zombie " << i << " te asusto de tanto mirarlo." << std::endl;
+                    }
+                }
+
                 // Salto brusco a un nuevo angulo cada ZOMBIE_TWITCH_STEP_DURATION
                 // segundos (no un giro suave) -- se siente como un cuerpo rigido
-                // sacudiendose, no una animacion fluida.
+                // sacudiendose, no una animacion fluida. Se intensifica cerca del jugador.
                 float twitchStep = floorf(currentFrame / ZOMBIE_TWITCH_STEP_DURATION + (float)i * 7.0f);
                 float twitchRoll = PseudoRandom01(twitchStep * 4.21f + (float)i * 33.1f);
-                float twitchYaw = (twitchRoll - 0.5f) * 2.0f * ZOMBIE_TWITCH_YAW_DEG;
+                float twitchBoost = 1.0f + proximity * (ZOMBIE_PROXIMITY_TWITCH_BOOST - 1.0f);
+                float twitchYaw = (twitchRoll - 0.5f) * 2.0f * ZOMBIE_TWITCH_YAW_DEG * twitchBoost;
 
                 // Vaiven vertical leve y continuo (respiracion superficial)
                 float instPhase = (float)i * 2.399963f;
-                float bobY = sinf(currentFrame * ZOMBIE_TWITCH_BOB_SPEED + instPhase) * ZOMBIE_TWITCH_BOB_AMOUNT;
+                float bobY = sinf(currentFrame * ZOMBIE_TWITCH_BOB_SPEED + instPhase) * ZOMBIE_TWITCH_BOB_AMOUNT * twitchBoost;
 
                 // Vaiven de posicion: se tambalea en el lugar (radio chico,
-                // dentro del margen de colision ya reservado)
-                float swayX = sinf(currentFrame * ZOMBIE_SWAY_SPEED + instPhase) * ZOMBIE_SWAY_RADIUS;
-                float swayZ = cosf(currentFrame * ZOMBIE_SWAY_SPEED * 0.8f + instPhase) * ZOMBIE_SWAY_RADIUS * 0.6f;
+                // dentro del margen de colision ya reservado). Tambien se
+                // intensifica cerca del jugador.
+                float swayBoost = 1.0f + proximity * (ZOMBIE_PROXIMITY_SWAY_BOOST - 1.0f);
+                float swayX = sinf(currentFrame * ZOMBIE_SWAY_SPEED + instPhase) * ZOMBIE_SWAY_RADIUS * swayBoost;
+                float swayZ = cosf(currentFrame * ZOMBIE_SWAY_SPEED * 0.8f + instPhase) * ZOMBIE_SWAY_RADIUS * 0.6f * swayBoost;
 
                 // Inclinacion lateral tipo "a punto de caerse"
                 float leanDeg = sinf(currentFrame * ZOMBIE_LEAN_SPEED + instPhase * 1.3f) * ZOMBIE_LEAN_DEG;
@@ -1486,6 +1633,23 @@ int main()
                 if (REPEATED_MODEL_IS_Z_UP)
                     instanceMatrix = glm::rotate(instanceMatrix, glm::radians(-90.0f), glm::vec3(1.0f, 0.0f, 0.0f));
                 instanceMatrix = glm::scale(instanceMatrix, glm::vec3(inst.scale));
+                instanceMatrix = glm::translate(instanceMatrix, -repeatedPivotLocal);
+
+                // -------- Ojos: posicion en mundo (siguen el sway/twitch) + intensidad reactiva --------
+                if (ZOMBIE_EYES_ENABLED)
+                {
+                    glm::vec3 leftEyeWorld = glm::vec3(instanceMatrix * glm::vec4(eyeLeftLocal, 1.0f));
+                    glm::vec3 rightEyeWorld = glm::vec3(instanceMatrix * glm::vec4(eyeRightLocal, 1.0f));
+
+                    float pulseSpeed = glm::mix(ZOMBIE_EYE_PULSE_SPEED_FAR, ZOMBIE_EYE_PULSE_SPEED_CLOSE, proximity);
+                    float pulse = 0.6f + 0.4f * sinf(currentFrame * pulseSpeed + instPhase);
+                    float eyeIntensity = glm::mix(ZOMBIE_EYE_BASE_INTENSITY, ZOMBIE_EYE_CLOSE_INTENSITY, proximity) * pulse;
+
+                    currentEyePositions.push_back(leftEyeWorld);
+                    currentEyeIntensities.push_back(eyeIntensity);
+                    currentEyePositions.push_back(rightEyeWorld);
+                    currentEyeIntensities.push_back(eyeIntensity);
+                }
 
                 glActiveTexture(GL_TEXTURE0);
                 glBindTexture(GL_TEXTURE_2D, fallbackWhiteTex);
@@ -1525,6 +1689,65 @@ int main()
                     ourShader.setMat4("model", instanceMatrix);
                     repeatedModel->Draw(ourShader);
                 }
+            }
+
+            // -------- Tension progresiva: sube mientras se sostiene la mirada,
+            // y no vuelve a cero de golpe despues de un screamer --------
+            float maxGazeProgress = 0.0f;
+            for (float t : g_zombieGazeTimer)
+                maxGazeProgress = std::max(maxGazeProgress, t / ZOMBIE_SCREAMER_STARE_DURATION);
+            maxGazeProgress = glm::clamp(maxGazeProgress, 0.0f, 1.0f);
+
+            float postScareLinger = 0.0f;
+            if (currentFrame < g_screamerEndTime)
+                postScareLinger = 1.0f; // durante el susto en si
+            else if (currentFrame < g_screamerEndTime + ZOMBIE_SCREAMER_LINGER_DURATION)
+                postScareLinger = 1.0f - (currentFrame - g_screamerEndTime) / ZOMBIE_SCREAMER_LINGER_DURATION;
+
+            float gazeTension = std::max(maxGazeProgress, postScareLinger * 0.6f);
+            ourShader.setFloat("gazeTension", gazeTension);
+            ourShader.setFloat("grainAmount", GRAIN_AMOUNT * (1.0f + gazeTension * 1.5f));
+
+            // Uniforms de ojos para el shader principal (se aplican el
+            // siguiente frame a warehouse/arbol/zombies -- desfase de 1
+            // frame, imperceptible para luces tan chicas que se mueven poco).
+            ourShader.setVec3("zombieEyeColor", ZOMBIE_EYE_COLOR);
+            ourShader.setInt("numZombieEyes", (int)currentEyePositions.size());
+            for (size_t k = 0; k < currentEyePositions.size(); k++)
+            {
+                ourShader.setVec3("zombieEyePositions[" + std::to_string(k) + "]", currentEyePositions[k]);
+                ourShader.setFloat("zombieEyeIntensities[" + std::to_string(k) + "]", currentEyeIntensities[k]);
+            }
+
+            // Bombillas visibles en cada ojo (glow real, no solo iluminacion)
+            if (ZOMBIE_EYES_ENABLED)
+            {
+                glm::vec3 camRightEyes = glm::normalize(glm::cross(camera.Front, camera.WorldUp));
+                glm::vec3 camUpEyes = glm::normalize(glm::cross(camRightEyes, camera.Front));
+
+                glDepthMask(GL_FALSE);
+                glEnable(GL_BLEND);
+                glBlendFunc(GL_SRC_ALPHA, GL_ONE);
+
+                bulbShader.use();
+                bulbShader.setMat4("view", view);
+                bulbShader.setMat4("projection", projection);
+                bulbShader.setVec3("camRight", camRightEyes);
+                bulbShader.setVec3("camUp", camUpEyes);
+                bulbShader.setVec3("billboardColor", ZOMBIE_EYE_COLOR);
+                bulbShader.setFloat("billboardScale", 0.08f);
+
+                glBindVertexArray(bulbVAO);
+                for (size_t k = 0; k < currentEyePositions.size(); k++)
+                {
+                    bulbShader.setVec3("billboardCenter", currentEyePositions[k]);
+                    bulbShader.setFloat("billboardIntensity", currentEyeIntensities[k] * 1.5f);
+                    glDrawArrays(GL_TRIANGLES, 0, 6);
+                }
+                glBindVertexArray(0);
+
+                glDisable(GL_BLEND);
+                glDepthMask(GL_TRUE);
             }
         }
 
