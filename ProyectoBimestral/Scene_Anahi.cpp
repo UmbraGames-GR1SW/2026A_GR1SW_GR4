@@ -133,12 +133,15 @@ namespace Anahi {
     // -------------------------------------------------------------------------------------
     // TIEMPOS DE APARICIÓN GRADUAL
     // -------------------------------------------------------------------------------------
-    static const float CLOWN_APPEAR_TIME = 7.0f;
-    static const float CHUKY_APPEAR_TIME = 12.0f;
-    static const float HACHA_APPEAR_TIME = 6.0f;
-    static const float DANGER_APPEAR_TIME = 7.0f;
-    static const float MASCARA_APPEAR_TIME = 12.0f;
+    // NOTA: REVEAL_FADE_DURATION se declara primero porque las *_APPEAR_TIME dependen
+    // de ella para forzar que los modelos ya estén 100% visibles desde el frame 0.
     static const float REVEAL_FADE_DURATION = 3.58f;
+
+    static const float CLOWN_APPEAR_TIME = -REVEAL_FADE_DURATION;
+    static const float CHUKY_APPEAR_TIME = -REVEAL_FADE_DURATION;
+    static const float HACHA_APPEAR_TIME = -REVEAL_FADE_DURATION;
+    static const float DANGER_APPEAR_TIME = -REVEAL_FADE_DURATION;
+    static const float MASCARA_APPEAR_TIME = -REVEAL_FADE_DURATION;
 
     static float tiempoInicioJuego = 0.0f;
     static bool tiempoInicioRegistrado = false;
@@ -377,6 +380,8 @@ namespace Anahi {
             // -------------------------------------------------------------------------------------
             // REVELACIÓN GRADUAL
             // -------------------------------------------------------------------------------------
+            // Con los *_APPEAR_TIME en negativo, RevealFactor devuelve 1.0 desde el frame 0,
+            // así que todos los modelos ya aparecen completos al iniciar la escena.
             float revealPayaso = RevealFactor(tiempoDeJuego, CLOWN_APPEAR_TIME, REVEAL_FADE_DURATION);
             float revealChuky = RevealFactor(tiempoDeJuego, CHUKY_APPEAR_TIME, REVEAL_FADE_DURATION);
             float revealHacha = RevealFactor(tiempoDeJuego, HACHA_APPEAR_TIME, REVEAL_FADE_DURATION);
