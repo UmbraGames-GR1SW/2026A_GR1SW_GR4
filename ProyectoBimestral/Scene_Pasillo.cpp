@@ -7,6 +7,7 @@
 #include <learnopengl/camera.h>
 #include <learnopengl/model.h>
 #include <learnopengl/text_renderer.h>
+#include <learnopengl/stb_image.h>
 #include <iostream>
 
 extern enum SceneType { SCENE_PASILLO, SCENE_SAMY, SCENE_ANI, SCENE_MATTHEW, SCENE_JOSUE };
@@ -16,6 +17,22 @@ extern SceneType g_NextScene;
 namespace Pasillo {
     static unsigned int SCR_WIDTH = 1920;
     static unsigned int SCR_HEIGHT = 1080;
+
+    // -------------------------------------------------------------------------------------
+    // ESTADOS PARA LA INTRODUCCIÓN CINEMÁTICA
+    // -------------------------------------------------------------------------------------
+    enum IntroPhase {
+        INTRO_WAIT_BLACK, // Segundos en negro inicial (antes de mostrar imagen)
+        INTRO_FADE_IN_IMG, // Aparece lentamente la imagen de bienvenida
+        INTRO_WAIT_ENTER,  // Muestra la imagen esperando el ENTER
+        INTRO_FADE_OUT_IMG,// Se desvanece la imagen a negro
+        INTRO_FADE_IN_GAME,// El negro se desvanece revelando el pasillo
+        INTRO_DONE         // El juego empieza normal
+    };
+    static IntroPhase introPhase = INTRO_DONE; // Inicializado en DONE para saltar la intro si ya se vio
+    static bool firstTimeEver = true;         // Variable persistente
+    static float introTimer = 0.0f;
+    static bool enterPressedLastFrame = false;
 
     // Posición inicial dentro del pasillo (escalado a metros)
     static Camera camera(glm::vec3(-12.0f, 1.2f, 0.0f));
@@ -30,6 +47,38 @@ namespace Pasillo {
     static bool fKeyPressedLastFrame = false;
     static bool showMenu = true;
     static bool mKeyPressedLastFrame = false;
+
+    unsigned int loadTexture(char const* path)
+    {
+        unsigned int textureID;
+        glGenTextures(1, &textureID);
+
+        int width, height, nrComponents;
+        unsigned char* data = stbi_load(path, &width, &height, &nrComponents, 0);
+        if (data)
+        {
+            GLenum format;
+            if (nrComponents == 1) format = GL_RED;
+            else if (nrComponents == 3) format = GL_RGB;
+            else if (nrComponents == 4) format = GL_RGBA;
+
+            glBindTexture(GL_TEXTURE_2D, textureID);
+            glTexImage2D(GL_TEXTURE_2D, 0, format, width, height, 0, format, GL_UNSIGNED_BYTE, data);
+            glGenerateMipmap(GL_TEXTURE_2D);
+
+            stbi_image_free(data);
+        }
+        else
+        {
+            // Fallback: Si no encuentra la imagen genera un pixel negro puro de forma segura
+            glBindTexture(GL_TEXTURE_2D, textureID);
+            unsigned char blackPixel[3] = { 0, 0, 0 };
+            glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, 1, 1, 0, GL_RGB, GL_UNSIGNED_BYTE, blackPixel);
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+        }
+        return textureID;
+    }
 
     void ClampPlayerToPasillo()
     {
@@ -64,13 +113,28 @@ namespace Pasillo {
         lastX = xpos;
         lastY = ypos;
 
-        camera.ProcessMouseMovement(xoffset, yoffset);
+        if (introPhase == INTRO_DONE) {
+            camera.ProcessMouseMovement(xoffset, yoffset);
+        }
     }
 
     void processInput(GLFWwindow* window)
     {
         if (glfwGetKey(window, GLFW_KEY_ESCAPE) == GLFW_PRESS)
             glfwSetWindowShouldClose(window, true);
+
+        // Lógica del ENTER para avanzar la intro
+        bool enterPressed = glfwGetKey(window, GLFW_KEY_ENTER) == GLFW_PRESS;
+        if (enterPressed && !enterPressedLastFrame && introPhase == INTRO_WAIT_ENTER) {
+            introPhase = INTRO_FADE_OUT_IMG;
+            introTimer = (float)glfwGetTime();
+        }
+        enterPressedLastFrame = enterPressed;
+
+        // --- BLOQUEO DE CONTROLES DURANTE LA INTRODUCCIÓN ---
+        if (introPhase != INTRO_DONE) {
+            return;
+        }
 
         // Velocidad base y de carrera con Shift (estilo Samy)
         float baseSpeed = 2.5f;
@@ -135,6 +199,19 @@ namespace Pasillo {
         SCR_WIDTH = width;
         SCR_HEIGHT = height;
 
+        // Reiniciar variables para cuando se regrese a esta escena
+        enterPressedLastFrame = false;
+
+        // Lógica de primera vez: solo inicializa la intro si es el primer arranque del programa
+        if (firstTimeEver) {
+            introPhase = INTRO_WAIT_BLACK;
+            introTimer = static_cast<float>(glfwGetTime());
+            firstTimeEver = false;
+        }
+        else {
+            introPhase = INTRO_DONE;
+        }
+
         // Shaders
         Shader ourShader("shaders/Vertex_Samy.vs", "shaders/Fragment_Samy.fs");
         Shader textShader("shaders/text_samy.vs", "shaders/text_samy.fs");
@@ -144,6 +221,46 @@ namespace Pasillo {
 
         // Cargar fuentes
         InitFreeType("fonts/arial.ttf");
+
+        // ---- CONFIGURACIÓN DEL QUAD Y SHADERS PARA LA PANTALLA DE INTRO ----
+        unsigned int introTexture = loadTexture("./model/pasillo/intro_message.jpg"); // Asegúrate de tener esta imagen
+
+        float quadVertices[] = {
+            // Posiciones   // Texturas
+            -1.0f,  1.0f,  0.0f, 0.0f,
+            -1.0f, -1.0f,  0.0f, 1.0f,
+             1.0f, -1.0f,  1.0f, 1.0f,
+            -1.0f,  1.0f,  0.0f, 0.0f,
+             1.0f, -1.0f,  1.0f, 1.0f,
+             1.0f,  1.0f,  1.0f, 0.0f
+        };
+        unsigned int quadVAO, quadVBO;
+        glGenVertexArrays(1, &quadVAO);
+        glGenBuffers(1, &quadVBO);
+        glBindVertexArray(quadVAO);
+        glBindBuffer(GL_ARRAY_BUFFER, quadVBO);
+        glBufferData(GL_ARRAY_BUFFER, sizeof(quadVertices), &quadVertices, GL_STATIC_DRAW);
+        glEnableVertexAttribArray(0);
+        glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 4 * sizeof(float), (void*)0);
+        glEnableVertexAttribArray(1);
+        glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 4 * sizeof(float), (void*)(2 * sizeof(float)));
+
+        const char* vShaderCode = "#version 330 core\nlayout (location = 0) in vec2 aPos;\nlayout (location = 1) in vec2 aTexCoords;\nout vec2 TexCoords;\nvoid main() { TexCoords = aTexCoords; gl_Position = vec4(aPos.x, aPos.y, 0.0, 1.0); }\n";
+        const char* fShaderCode = "#version 330 core\nout vec4 FragColor;\nin vec2 TexCoords;\nuniform sampler2D screenTexture;\nuniform float fade;\nvoid main() { FragColor = vec4(texture(screenTexture, TexCoords).rgb * fade, 1.0); }\n";
+
+        unsigned int vertex, fragment, quadShaderProgram;
+        vertex = glCreateShader(GL_VERTEX_SHADER);
+        glShaderSource(vertex, 1, &vShaderCode, NULL);
+        glCompileShader(vertex);
+        fragment = glCreateShader(GL_FRAGMENT_SHADER);
+        glShaderSource(fragment, 1, &fShaderCode, NULL);
+        glCompileShader(fragment);
+        quadShaderProgram = glCreateProgram();
+        glAttachShader(quadShaderProgram, vertex);
+        glAttachShader(quadShaderProgram, fragment);
+        glLinkProgram(quadShaderProgram);
+        glDeleteShader(vertex);
+        glDeleteShader(fragment);
 
         // Reiniciar estado de cámara apuntando por el pasillo (Yaw = 0.0f, X en el inicio a -12.0f)
         camera = Camera(glm::vec3(-12.0f, 1.2f, 0.0f), glm::vec3(0.0f, 1.0f, 0.0f), 0.0f, 0.0f);
@@ -160,9 +277,72 @@ namespace Pasillo {
 
             processInput(window);
 
-            glClearColor(0.02f, 0.02f, 0.02f, 1.0f);
+            glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
             glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
+            // -------------------------------------------------------------------------------------
+            // LÓGICA DE LA FASE INTRODUCTORIA
+            // -------------------------------------------------------------------------------------
+            if (introPhase != INTRO_DONE)
+            {
+                glDisable(GL_DEPTH_TEST);
+                glUseProgram(quadShaderProgram);
+                glBindVertexArray(quadVAO);
+
+                float fadeValue = 0.0f;
+                float fadeDuration = 2.0f; // Duración de los difuminados
+                bool drawGameBehind = false;
+
+                if (introPhase == INTRO_WAIT_BLACK)
+                {
+                    if (currentFrame - introTimer >= 1.5f) {
+                        introPhase = INTRO_FADE_IN_IMG;
+                        introTimer = currentFrame;
+                    }
+                }
+                else if (introPhase == INTRO_FADE_IN_IMG)
+                {
+                    float progress = (currentFrame - introTimer) / fadeDuration;
+                    fadeValue = glm::clamp(progress, 0.0f, 1.0f);
+                    if (progress >= 1.0f) {
+                        introPhase = INTRO_WAIT_ENTER;
+                    }
+                }
+                else if (introPhase == INTRO_WAIT_ENTER)
+                {
+                    fadeValue = 1.0f;
+                    // Se queda esperando estático el ENTER (sin renderizar texto extra encima)
+                }
+                else if (introPhase == INTRO_FADE_OUT_IMG)
+                {
+                    float progress = (currentFrame - introTimer) / fadeDuration;
+                    fadeValue = 1.0f - glm::clamp(progress, 0.0f, 1.0f);
+                    if (progress >= 1.0f) {
+                        introPhase = INTRO_FADE_IN_GAME;
+                        introTimer = currentFrame;
+                    }
+                }
+                else if (introPhase == INTRO_FADE_IN_GAME)
+                {
+                    drawGameBehind = true;
+                    introPhase = INTRO_DONE;
+                }
+
+                if (!drawGameBehind) {
+                    glUniform1f(glGetUniformLocation(quadShaderProgram, "fade"), fadeValue);
+                    glBindTexture(GL_TEXTURE_2D, introTexture);
+                    glDrawArrays(GL_TRIANGLES, 0, 6);
+
+                    glfwSwapBuffers(window);
+                    glfwPollEvents();
+                    continue; // Saltar el renderizado del nivel 3D
+                }
+            }
+
+            // -------------------------------------------------------------------------------------
+            // RENDERIZADO DEL PASILLO 3D
+            // -------------------------------------------------------------------------------------
+            glEnable(GL_DEPTH_TEST);
             ourShader.use();
 
             // Parámetros de la cámara
@@ -212,12 +392,12 @@ namespace Pasillo {
             for (int i = 0; i < 4; i++) {
                 std::string base = "pointLights[" + std::to_string(i) + "].";
                 ourShader.setVec3(base + "position", glm::vec3(0.0f));
-                ourShader.setVec3(base + "ambient", glm::vec3(0.0f));
-                ourShader.setVec3(base + "diffuse", glm::vec3(0.0f));
-                ourShader.setVec3(base + "specular", glm::vec3(0.0f));
-                ourShader.setFloat(base + "constant", 1.0f);
-                ourShader.setFloat(base + "linear", 0.09f);
-                ourShader.setFloat(base + "quadratic", 0.032f);
+                ourShader.setVec3("pointLights[" + std::to_string(i) + "].ambient", glm::vec3(0.0f));
+                ourShader.setVec3("pointLights[" + std::to_string(i) + "].diffuse", glm::vec3(0.0f));
+                ourShader.setVec3("pointLights[" + std::to_string(i) + "].specular", glm::vec3(0.0f));
+                ourShader.setFloat("pointLights[" + std::to_string(i) + "].constant", 1.0f);
+                ourShader.setFloat("pointLights[" + std::to_string(i) + "].linear", 0.09f);
+                ourShader.setFloat("pointLights[" + std::to_string(i) + "].quadratic", 0.032f);
             }
 
             // Proyecciones
@@ -260,5 +440,9 @@ namespace Pasillo {
             glfwSwapBuffers(window);
             glfwPollEvents();
         }
+
+        glDeleteVertexArrays(1, &quadVAO);
+        glDeleteBuffers(1, &quadVBO);
+        glDeleteProgram(quadShaderProgram);
     }
 }

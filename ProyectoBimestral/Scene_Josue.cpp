@@ -40,12 +40,18 @@ namespace Josue {
     static unsigned int SCR_HEIGHT = 720;
 
     // =========================================================
-    // ESTADOS DE JUEGO (Mecánica de Jumpscare)
+    // ESTADOS DE JUEGO (Mecánica de Jumpscare y Finales)
     // =========================================================
     enum GameState {
         PLAYING,
         JUMPSCARE,
-        BLACK_SCREEN
+        BLACK_SCREEN_RESET, // Pantalla negra tras perder (jumpscare)
+        ENDING_WAIT_BLACK,  // 4 segundos de negro total al escapar
+        ENDING_FADE_IN_1,   // Difuminado de negro a Texto 1
+        ENDING_SHOW_1,      // Mostrar Texto 1 durante 12 segundos
+        ENDING_FADE_OUT_1,  // Difuminado de Texto 1 a negro
+        ENDING_FADE_IN_2,   // Difuminado de negro a Texto 2
+        ENDING_WAIT_ENTER   // Pantalla final (Texto 2, espera ENTER)
     };
     static GameState gameState = PLAYING;
     static float stateTimer = 0.0f;
@@ -84,7 +90,7 @@ namespace Josue {
     static float roomMinX = -1.8f;
     static float roomMaxX = 2.1f;
     static float roomMinZ = -18.0f;
-    static float roomMaxZ = 347.0f;
+    static float roomMaxZ = 347.0f; // Límite donde se dispara el final
     static float playerHeight = 1.2f;
 
     // =========================================================
@@ -126,19 +132,23 @@ namespace Josue {
         ambientPlayed = false;
         screamPlayed = false;
 
-
         // --- INICIALIZAR AUDIO ---
         initaudio();
         setvolume(100);
 
-        // --- PRECARGAR el grito ANTES del render loop, para que suene instantáneo ---
+        // --- PRECARGAR el grito ANTES del render loop ---
         preloadSound("music/scream.mp3", "screamsound");
 
         Shader ourShader("shaders/Vertex_Josue.vs", "shaders/Fragment_Josue.fs");
         Model exitModel("./model/exit/exit.obj");
         Model entidadModel("./model/exit/entidad.obj");
 
+        // Cargar texturas para las pantallas completas (Jumpscare y Final)
         unsigned int screamTexture = loadTexture("./model/exit/scream.jpeg");
+
+        // Carga imágenes de texto 
+        unsigned int ending1Texture = loadTexture("./model/exit/ending1.jpg");
+        unsigned int ending2Texture = loadTexture("./model/exit/ending2.jpeg");
 
         float quadVertices[] = {
             // Posiciones   // Texturas
@@ -161,7 +171,8 @@ namespace Josue {
         glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 4 * sizeof(float), (void*)(2 * sizeof(float)));
 
         const char* vShaderCode = "#version 330 core\nlayout (location = 0) in vec2 aPos;\nlayout (location = 1) in vec2 aTexCoords;\nout vec2 TexCoords;\nvoid main() { TexCoords = aTexCoords; gl_Position = vec4(aPos.x, aPos.y, 0.0, 1.0); }\n";
-        const char* fShaderCode = "#version 330 core\nout vec4 FragColor;\nin vec2 TexCoords;\nuniform sampler2D screenTexture;\nvoid main() { FragColor = texture(screenTexture, TexCoords); }\n";
+        // Nuevo Fragment Shader que incluye la variable uniform 'fade' para difuminar la imagen a negro
+        const char* fShaderCode = "#version 330 core\nout vec4 FragColor;\nin vec2 TexCoords;\nuniform sampler2D screenTexture;\nuniform float fade;\nvoid main() { FragColor = vec4(texture(screenTexture, TexCoords).rgb * fade, 1.0); }\n";
 
         unsigned int vertex, fragment, quadShaderProgram;
         vertex = glCreateShader(GL_VERTEX_SHADER);
@@ -200,6 +211,19 @@ namespace Josue {
 
             if (gameState == PLAYING)
             {
+                // =========================================================
+                // LÓGICA DE ESCAPE ÉXITOSO (Trigger del Final)
+                // =========================================================
+                if (camera.Position.z >= 345.0f) // Llegó casi al final del pasillo
+                {
+                    gameState = ENDING_WAIT_BLACK; // Comienza con los 4 segundos en negro
+                    stateTimer = absoluteTime;
+                    entitySpeed = 0.0f; // Detener a la entidad
+                    haltmusic();        // Silenciar la música
+                    continue; // Saltar el renderizado del pasillo en este frame
+                }
+
+                // Dificultad dinámica
                 float currentSceneTime = absoluteTime - gameStartTime;
                 if (currentSceneTime < 7.0f) {
                     entitySpeed = 2.0f;
@@ -209,10 +233,9 @@ namespace Josue {
                 }
 
                 glEnable(GL_DEPTH_TEST);
-
                 ourShader.use();
-                
-                // Actualizar proyección por si cambia tamaño ventana
+
+                // Proyección y Vista
                 glfwGetFramebufferSize(window, &width, &height);
                 SCR_WIDTH = width;
                 SCR_HEIGHT = height;
@@ -222,10 +245,12 @@ namespace Josue {
                 ourShader.setMat4("view", view);
                 ourShader.setVec3("viewPos", camera.Position);
 
+                // Luz Direccional (Ambiental oscura)
                 ourShader.setVec3("lightDir", glm::vec3(-0.3f, -1.0f, -0.2f));
                 ourShader.setVec3("lightColor", glm::vec3(0.02f, 0.02f, 0.03f));
                 ourShader.setFloat("specularStrength", 0.05f);
 
+                // Posición de Linterna (Mano de Elena)
                 glm::vec3 handOffset = (camera.Right * linternaOffsetX) + (camera.Up * linternaOffsetY) + (camera.Front * linternaOffsetZ);
                 glm::vec3 currentLinternaPos = camera.Position + handOffset;
 
@@ -249,6 +274,7 @@ namespace Josue {
                 ourShader.setFloat("spotLight.cutOff", glm::cos(glm::radians(10.0f)));
                 ourShader.setFloat("spotLight.outerCutOff", glm::cos(glm::radians(25.0f)));
 
+                // Dibujar los Pasillos
                 int numPasillos = 4;
                 float longitudPasillo = 91.5f;
                 int lightIndex = 0;
@@ -261,6 +287,7 @@ namespace Josue {
                     ourShader.setMat4("model", exitMat);
                     exitModel.Draw(ourShader);
 
+                    // Luces Rojas Titilantes
                     for (int j = 0; j < 5; j++)
                     {
                         float currentZ = baseLightZ[j] + (i * longitudPasillo);
@@ -283,7 +310,7 @@ namespace Josue {
                     }
                 }
 
-                // Movimiento Entidad
+                // Movimiento Entidad (Persecución)
                 glm::vec3 direction = glm::vec3(0.0f, 0.0f, camera.Position.z - entityPos.z);
                 float distZ = glm::length(direction);
 
@@ -303,7 +330,7 @@ namespace Josue {
                 entidadModel.Draw(ourShader);
 
                 // =========================================================
-                // COLISIÓN (Si te toca -> Cambio al estado JUMPSCARE)
+                // COLISIÓN (Si te alcanza -> JUMPSCARE)
                 // =========================================================
                 float dx = camera.Position.x - entityPos.x;
                 float dz = camera.Position.z - entityPos.z;
@@ -315,7 +342,6 @@ namespace Josue {
                     gameState = JUMPSCARE;
                     stateTimer = (float)glfwGetTime();
 
-                    // --- AUDIO: detener ambiente y reproducir el grito YA PRECARGADO (instantáneo) ---
                     haltmusic();
                     if (!screamPlayed)
                     {
@@ -328,17 +354,19 @@ namespace Josue {
             {
                 glDisable(GL_DEPTH_TEST);
                 glUseProgram(quadShaderProgram);
+                glUniform1f(glGetUniformLocation(quadShaderProgram, "fade"), 1.0f); // Sin difuminado para el screamer
                 glBindVertexArray(quadVAO);
                 glBindTexture(GL_TEXTURE_2D, screamTexture);
                 glDrawArrays(GL_TRIANGLES, 0, 6);
 
                 if (absoluteTime - stateTimer >= 1.5f) {
-                    gameState = BLACK_SCREEN;
+                    gameState = BLACK_SCREEN_RESET;
                     stateTimer = (float)glfwGetTime();
                 }
             }
-            else if (gameState == BLACK_SCREEN)
+            else if (gameState == BLACK_SCREEN_RESET)
             {
+                // Espera en negro puro y reinicia la persecución
                 if (absoluteTime - stateTimer >= 4.0f) {
                     camera.Position = glm::vec3(0.0f, 1.2f, 1.0f);
                     entityPos = glm::vec3(0.0f, 0.0f, -25.0f);
@@ -346,10 +374,80 @@ namespace Josue {
                     gameStartTime = (float)glfwGetTime();
                     gameState = PLAYING;
 
-                    // --- AUDIO: reiniciar flags y volver a poner ambiente ---
                     screamPlayed = false;
                     ambientPlayed = false;
                 }
+            }
+            // =========================================================
+            // LÓGICA DE FASES DEL FINAL (Pantallas con textos)
+            // =========================================================
+            else if (gameState >= ENDING_WAIT_BLACK)
+            {
+                glDisable(GL_DEPTH_TEST);
+                glUseProgram(quadShaderProgram);
+                glBindVertexArray(quadVAO);
+
+                float fadeValue = 1.0f;
+                unsigned int currentTexture = ending1Texture;
+                float fadeDuration = 2.5f; // Duración del difuminado en segundos
+
+                if (gameState == ENDING_WAIT_BLACK)
+                {
+                    fadeValue = 0.0f; // Completamente negro
+                    if (absoluteTime - stateTimer >= 4.0f) { // Espera 4 segundos
+                        gameState = ENDING_FADE_IN_1;
+                        stateTimer = absoluteTime;
+                    }
+                }
+                else if (gameState == ENDING_FADE_IN_1)
+                {
+                    float progress = (absoluteTime - stateTimer) / fadeDuration;
+                    fadeValue = glm::clamp(progress, 0.0f, 1.0f);
+
+                    if (progress >= 1.0f) {
+                        gameState = ENDING_SHOW_1;
+                        stateTimer = absoluteTime;
+                    }
+                }
+                else if (gameState == ENDING_SHOW_1)
+                {
+                    fadeValue = 1.0f;
+                    if (absoluteTime - stateTimer >= 12.0f) { // Mostrar la imagen 1 por 12 segundos
+                        gameState = ENDING_FADE_OUT_1;
+                        stateTimer = absoluteTime;
+                    }
+                }
+                else if (gameState == ENDING_FADE_OUT_1)
+                {
+                    float progress = (absoluteTime - stateTimer) / fadeDuration;
+                    fadeValue = 1.0f - glm::clamp(progress, 0.0f, 1.0f);
+
+                    if (progress >= 1.0f) {
+                        gameState = ENDING_FADE_IN_2;
+                        stateTimer = absoluteTime;
+                    }
+                }
+                else if (gameState == ENDING_FADE_IN_2)
+                {
+                    currentTexture = ending2Texture;
+                    float progress = (absoluteTime - stateTimer) / fadeDuration;
+                    fadeValue = glm::clamp(progress, 0.0f, 1.0f);
+
+                    if (progress >= 1.0f) {
+                        gameState = ENDING_WAIT_ENTER;
+                        stateTimer = absoluteTime;
+                    }
+                }
+                else if (gameState == ENDING_WAIT_ENTER)
+                {
+                    currentTexture = ending2Texture;
+                    fadeValue = 1.0f; // Queda completamente visible esperando a que pulse ENTER
+                }
+
+                // Enviar la transparencia al shader y dibujar
+                glUniform1f(glGetUniformLocation(quadShaderProgram, "fade"), fadeValue);
+                glBindTexture(GL_TEXTURE_2D, currentTexture);
+                glDrawArrays(GL_TRIANGLES, 0, 6);
             }
 
             glfwSwapBuffers(window);
@@ -386,8 +484,12 @@ namespace Josue {
         }
         else
         {
-            std::cout << "Texture failed to load at path: " << path << std::endl;
-            stbi_image_free(data);
+            // Fallback: Si no encuentra la imagen genera un pixel negro puro de forma segura
+            glBindTexture(GL_TEXTURE_2D, textureID);
+            unsigned char blackPixel[3] = { 0, 0, 0 };
+            glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, 1, 1, 0, GL_RGB, GL_UNSIGNED_BYTE, blackPixel);
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
         }
         return textureID;
     }
@@ -404,9 +506,24 @@ namespace Josue {
         if (glfwGetKey(window, GLFW_KEY_ESCAPE) == GLFW_PRESS)
             glfwSetWindowShouldClose(window, true);
 
-        // Volver al Pasillo principal
-        if (glfwGetKey(window, GLFW_KEY_H) == GLFW_PRESS)
-            g_NextScene = SCENE_PASILLO;
+        // Si estamos en la pantalla final, solo esperar al ENTER para salir
+        if (gameState == ENDING_WAIT_ENTER) {
+            if (glfwGetKey(window, GLFW_KEY_ENTER) == GLFW_PRESS) {
+                glfwSetWindowShouldClose(window, true); // Cierra el juego
+            }
+            return; // Bloquea todos los demás movimientos
+        }
+
+        // Si estamos en medio de las transiciones del final, bloquear el movimiento del jugador
+        if (gameState >= ENDING_WAIT_BLACK) {
+            return;
+        }
+
+        // Volver al Pasillo principal (Solo si está jugando normal o en reset)
+        if (gameState == PLAYING || gameState == BLACK_SCREEN_RESET) {
+            if (glfwGetKey(window, GLFW_KEY_H) == GLFW_PRESS)
+                g_NextScene = SCENE_PASILLO;
+        }
 
         if (gameState != PLAYING) {
             return;
@@ -415,7 +532,7 @@ namespace Josue {
         // --- Bloquea el movimiento los primeros 5 segundos de cada partida ---
         float currentTime = (float)glfwGetTime();
         if (currentTime - gameStartTime < 5.0f) {
-            return; // ESC ya se procesó arriba; el resto se ignora
+            return; // ESC y H ya se procesaron, el resto de movimiento se ignora
         }
 
         if (glfwGetKey(window, GLFW_KEY_LEFT_SHIFT) == GLFW_PRESS)

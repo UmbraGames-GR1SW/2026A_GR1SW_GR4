@@ -34,10 +34,24 @@ namespace Anahi {
     float HorrorFlicker(float time);
     float RevealFactor(float tiempoActual, float appearTime, float fadeDuration);
     void ClampPlayerToScene(float revealPayaso, float revealChuky, float revealHacha, float revealDanger, float revealMascara);
+    unsigned int loadTexture(char const* path);
 
     // settings
     static unsigned int SCR_WIDTH = 1920;
     static unsigned int SCR_HEIGHT = 1080;
+
+    // -------------------------------------------------------------------------------------
+    // ESTADOS PARA LA SALIDA CINEMÁTICA AL PASILLO
+    // -------------------------------------------------------------------------------------
+    enum ExitPhase {
+        EXIT_NONE,
+        EXIT_WAIT_BLACK, // Segundos en negro inicial
+        EXIT_FADE_IN,    // Aparece lentamente la imagen
+        EXIT_SHOW,       // Muestra la imagen por 10s
+        EXIT_FADE_OUT    // Se desvanece a negro y cambia de escena
+    };
+    static ExitPhase exitPhase = EXIT_NONE;
+    static float exitTimer = 0.0f;
 
     // -------------------------------------------------------------------------------------
     // PERSONAJE / CAMARA
@@ -101,8 +115,7 @@ namespace Anahi {
     static float mascaraRotationY = glm::radians(90.0f);
 
     // -------------------------------------------------------------------------------------
-    // COLISIONES (caja simple en XZ, sin depender de la clase Model)
-    // Calibra con la tecla P: camina hasta cada pared y ajusta estos 4 valores.
+    // COLISIONES
     // -------------------------------------------------------------------------------------
     static float sceneMinX = -9.5f;
     static float sceneMaxX = 5.5f;
@@ -110,8 +123,8 @@ namespace Anahi {
     static float sceneMaxZ = 3.0f;
     static bool pKeyPressedLastFrame = false;
 
-    static const float CLOWN_COLLISION_RADIUS = 1.1f;   
-    static const float CHUKY_COLLISION_RADIUS = 1.0f;   
+    static const float CLOWN_COLLISION_RADIUS = 1.1f;
+    static const float CHUKY_COLLISION_RADIUS = 1.0f;
     static const float HACHA_COLLISION_RADIUS = 0.8f;
     static const float DANGER_COLLISION_RADIUS = 0.6f;
     static const float MASCARA_COLLISION_RADIUS = 0.4f;
@@ -146,6 +159,10 @@ namespace Anahi {
         tiempoInicioRegistrado = false;
         tiempoInicioJuego = 0.0f;
 
+        // Reiniciar máquina de estados de salida
+        exitPhase = EXIT_NONE;
+        exitTimer = 0.0f;
+
         int width, height;
         glfwGetFramebufferSize(window, &width, &height);
         SCR_WIDTH = width;
@@ -169,6 +186,46 @@ namespace Anahi {
 
         camera.MovementSpeed = 2.5f;
 
+        // ---- CONFIGURACIÓN DEL QUAD Y SHADERS PARA LA PANTALLA DE SALIDA ----
+        unsigned int exitTexture = loadTexture("./model/garage_ani/exit_message.jpg");
+
+        float quadVertices[] = {
+            // Posiciones   // Texturas
+            -1.0f,  1.0f,  0.0f, 0.0f,
+            -1.0f, -1.0f,  0.0f, 1.0f,
+             1.0f, -1.0f,  1.0f, 1.0f,
+            -1.0f,  1.0f,  0.0f, 0.0f,
+             1.0f, -1.0f,  1.0f, 1.0f,
+             1.0f,  1.0f,  1.0f, 0.0f
+        };
+        unsigned int quadVAO, quadVBO;
+        glGenVertexArrays(1, &quadVAO);
+        glGenBuffers(1, &quadVBO);
+        glBindVertexArray(quadVAO);
+        glBindBuffer(GL_ARRAY_BUFFER, quadVBO);
+        glBufferData(GL_ARRAY_BUFFER, sizeof(quadVertices), &quadVertices, GL_STATIC_DRAW);
+        glEnableVertexAttribArray(0);
+        glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 4 * sizeof(float), (void*)0);
+        glEnableVertexAttribArray(1);
+        glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 4 * sizeof(float), (void*)(2 * sizeof(float)));
+
+        const char* vShaderCode = "#version 330 core\nlayout (location = 0) in vec2 aPos;\nlayout (location = 1) in vec2 aTexCoords;\nout vec2 TexCoords;\nvoid main() { TexCoords = aTexCoords; gl_Position = vec4(aPos.x, aPos.y, 0.0, 1.0); }\n";
+        const char* fShaderCode = "#version 330 core\nout vec4 FragColor;\nin vec2 TexCoords;\nuniform sampler2D screenTexture;\nuniform float fade;\nvoid main() { FragColor = vec4(texture(screenTexture, TexCoords).rgb * fade, 1.0); }\n";
+
+        unsigned int vertex, fragment, quadShaderProgram;
+        vertex = glCreateShader(GL_VERTEX_SHADER);
+        glShaderSource(vertex, 1, &vShaderCode, NULL);
+        glCompileShader(vertex);
+        fragment = glCreateShader(GL_FRAGMENT_SHADER);
+        glShaderSource(fragment, 1, &fShaderCode, NULL);
+        glCompileShader(fragment);
+        quadShaderProgram = glCreateProgram();
+        glAttachShader(quadShaderProgram, vertex);
+        glAttachShader(quadShaderProgram, fragment);
+        glLinkProgram(quadShaderProgram);
+        glDeleteShader(vertex);
+        glDeleteShader(fragment);
+
         std::default_random_engine generator;
         std::uniform_real_distribution<float> distribution(-0.008f, 0.008f);
 
@@ -182,6 +239,63 @@ namespace Anahi {
             lastFrame = currentFrame;
 
             processInput(window);
+
+            // -------------------------------------------------------------------------------------
+            // SECUENCIA DE SALIDA CINEMÁTICA
+            // -------------------------------------------------------------------------------------
+            if (exitPhase != EXIT_NONE)
+            {
+                glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
+                glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+
+                glDisable(GL_DEPTH_TEST);
+                glUseProgram(quadShaderProgram);
+                glBindVertexArray(quadVAO);
+
+                float fadeValue = 0.0f;
+                float fadeDuration = 2.5f;
+
+                if (exitPhase == EXIT_WAIT_BLACK)
+                {
+                    if (currentFrame - exitTimer >= 2.0f) { // 2 Segundos iniciales en negro puro
+                        exitPhase = EXIT_FADE_IN;
+                        exitTimer = currentFrame;
+                    }
+                }
+                else if (exitPhase == EXIT_FADE_IN)
+                {
+                    float progress = (currentFrame - exitTimer) / fadeDuration;
+                    fadeValue = glm::clamp(progress, 0.0f, 1.0f);
+                    if (progress >= 1.0f) {
+                        exitPhase = EXIT_SHOW;
+                        exitTimer = currentFrame;
+                    }
+                }
+                else if (exitPhase == EXIT_SHOW)
+                {
+                    fadeValue = 1.0f;
+                    if (currentFrame - exitTimer >= 10.0f) { // 10 Segundos mostrando la imagen
+                        exitPhase = EXIT_FADE_OUT;
+                        exitTimer = currentFrame;
+                    }
+                }
+                else if (exitPhase == EXIT_FADE_OUT)
+                {
+                    float progress = (currentFrame - exitTimer) / fadeDuration;
+                    fadeValue = 1.0f - glm::clamp(progress, 0.0f, 1.0f);
+                    if (progress >= 1.0f) {
+                        g_NextScene = SCENE_PASILLO; // Regreso automático al Pasillo
+                    }
+                }
+
+                glUniform1f(glGetUniformLocation(quadShaderProgram, "fade"), fadeValue);
+                glBindTexture(GL_TEXTURE_2D, exitTexture);
+                glDrawArrays(GL_TRIANGLES, 0, 6);
+
+                glfwSwapBuffers(window);
+                glfwPollEvents();
+                continue; // Saltar el resto del bucle normal de renderizado
+            }
 
             if (juegoIniciado && !tiempoInicioRegistrado)
             {
@@ -425,7 +539,6 @@ namespace Anahi {
                 float ancho2 = textRenderer->GetTextWidth(linea2, scale2);
                 float ancho3 = textRenderer->GetTextWidth(linea3, scale3);
 
-                // Alternativa segura a std::max para evitar problemas con macros en Windows
                 float tempMax = (ancho1 > ancho2) ? ancho1 : ancho2;
                 float anchoMaximo = (tempMax > ancho3) ? tempMax : ancho3;
 
@@ -457,6 +570,11 @@ namespace Anahi {
         }
 
         haltmusic();
+
+        glDeleteVertexArrays(1, &quadVAO);
+        glDeleteBuffers(1, &quadVBO);
+        glDeleteProgram(quadShaderProgram);
+
         delete textRenderer;
         textRenderer = nullptr;
     }
@@ -473,14 +591,12 @@ namespace Anahi {
         return baseIntensity;
     }
 
-    // 0.0 antes de appearTime, crece con smoothstep hasta 1.0 durante fadeDuration
     float RevealFactor(float tiempoActual, float appearTime, float fadeDuration)
     {
         float t = glm::clamp((tiempoActual - appearTime) / fadeDuration, 0.0f, 1.0f);
         return t * t * (3.0f - 2.0f * t);
     }
 
-    // Empuje 2D en XZ para que el jugador no atraviese paredes ni props ya revelados
     void ClampPlayerToScene(float revealPayaso, float revealChuky, float revealHacha, float revealDanger, float revealMascara)
     {
         camera.Position.x = glm::clamp(camera.Position.x, sceneMinX, sceneMaxX);
@@ -507,14 +623,57 @@ namespace Anahi {
         if (revealMascara > 0.05f) empujarFuera(mascaraPosition, MASCARA_COLLISION_RADIUS);
     }
 
+    unsigned int loadTexture(char const* path)
+    {
+        unsigned int textureID;
+        glGenTextures(1, &textureID);
+
+        int width, height, nrComponents;
+        unsigned char* data = stbi_load(path, &width, &height, &nrComponents, 0);
+        if (data)
+        {
+            GLenum format;
+            if (nrComponents == 1) format = GL_RED;
+            else if (nrComponents == 3) format = GL_RGB;
+            else if (nrComponents == 4) format = GL_RGBA;
+
+            glBindTexture(GL_TEXTURE_2D, textureID);
+            glTexImage2D(GL_TEXTURE_2D, 0, format, width, height, 0, format, GL_UNSIGNED_BYTE, data);
+            glGenerateMipmap(GL_TEXTURE_2D);
+
+            stbi_image_free(data);
+        }
+        else
+        {
+            // Fallback: Si no encuentra la imagen genera un pixel negro puro de forma segura
+            glBindTexture(GL_TEXTURE_2D, textureID);
+            unsigned char blackPixel[3] = { 0, 0, 0 };
+            glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, 1, 1, 0, GL_RGB, GL_UNSIGNED_BYTE, blackPixel);
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+        }
+        return textureID;
+    }
+
     void processInput(GLFWwindow* window)
     {
         if (glfwGetKey(window, GLFW_KEY_ESCAPE) == GLFW_PRESS)
             glfwSetWindowShouldClose(window, true);
 
-        // Tecla para volver al Pasillo principal
+        // --- BLOQUEO DE CONTROLES SI SE ESTÁ MOSTRANDO LA SALIDA CINEMÁTICA ---
+        if (exitPhase != EXIT_NONE) {
+            return;
+        }
+
+        // Tecla para volver al Pasillo de forma cinematográfica
         if (glfwGetKey(window, GLFW_KEY_H) == GLFW_PRESS)
-            g_NextScene = SCENE_PASILLO;
+        {
+            exitPhase = EXIT_WAIT_BLACK;
+            exitTimer = (float)glfwGetTime();
+            haltmusic();
+            haltsound();
+            return;
+        }
 
         bool enterPressed = glfwGetKey(window, GLFW_KEY_ENTER) == GLFW_PRESS;
         if (enterPressed && !enterPressedLastFrame && !juegoIniciado)
@@ -597,6 +756,8 @@ namespace Anahi {
         lastX = (float)xpos;
         lastY = (float)ypos;
 
-        camera.ProcessMouseMovement(xoffset, yoffset);
+        if (exitPhase == EXIT_NONE) {
+            camera.ProcessMouseMovement(xoffset, yoffset);
+        }
     }
 } // namespace Anahi
