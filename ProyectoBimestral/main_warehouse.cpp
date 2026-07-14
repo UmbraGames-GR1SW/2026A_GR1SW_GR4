@@ -182,8 +182,8 @@ const float MATERIAL_SHININESS = 24.0f;
 // Contraste crudo: >1 aplasta las sombras a negro (no se "adivina" lo que
 // hay en la oscuridad); 1.0 = sin cambio. Grano: textura sucia tipo
 // camara vieja/found footage, 0 = sin grano.
-const float CONTRAST_POWER = 1.25f; // bajado de 1.45: ese valor ahogaba demasiado la linterna
-const float GRAIN_AMOUNT = 0.05f;
+const float CONTRAST_POWER = 1.35f;
+const float GRAIN_AMOUNT = 0.065f;
 
 // Indices de malla a excluir por completo de la colision (por ejemplo
 // una lampara colgante, cables, o el "shell" exterior/techo si genera
@@ -208,6 +208,11 @@ float lastFrame = 0.0f;
 bool g_inBlackout = false;
 float g_nextBlackoutTime = -1.0f; // se inicializa la primera vez que se usa
 float g_blackoutEndTime = 0.0f;
+
+// Golpe visual: momento en que se disparo el ultimo flash (para el corte
+// de linterna). -1000 = nunca, asi el primer frame no dispara nada.
+float g_startleTriggerTime = -1000.0f;
+const float STARTLE_FLASH_DURATION = 0.18f;
 
 // Apagon real por foco: cada luz roja tiene su propio ciclo de
 // encendido/apagado (periodo y duracion del apagon distintos entre si,
@@ -777,6 +782,7 @@ int main()
         {
             g_inBlackout = true;
             g_blackoutEndTime = currentFrame + PseudoRandomRange(currentFrame, BLACKOUT_MIN_DURATION, BLACKOUT_MAX_DURATION);
+            g_startleTriggerTime = currentFrame;
             std::cout << "[DEBUG] Apagon de linterna iniciado." << std::endl;
         }
         else if (g_inBlackout && currentFrame >= g_blackoutEndTime)
@@ -887,6 +893,13 @@ int main()
         ourShader.setFloat("uTime", currentFrame);
         ourShader.setFloat("contrastPower", CONTRAST_POWER);
         ourShader.setFloat("grainAmount", GRAIN_AMOUNT);
+
+        // Golpe visual: fuerte al instante del corte, se desvanece rapido
+        float startleElapsed = currentFrame - g_startleTriggerTime;
+        float startleFlash = (startleElapsed >= 0.0f && startleElapsed < STARTLE_FLASH_DURATION)
+            ? (1.0f - startleElapsed / STARTLE_FLASH_DURATION)
+            : 0.0f;
+        ourShader.setFloat("startleFlash", startleFlash);
 
         ourModel.Draw(ourShader);
 
