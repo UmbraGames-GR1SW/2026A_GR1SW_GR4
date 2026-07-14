@@ -390,6 +390,9 @@ Release/
 *.jpg
 *.tga
 
+# Ignorar todos los archivos ZIP de modelos
+ProyectoBimestral/model/**/*.zip
+
 # Excepciones para subir los assets de pasillo
 !ProyectoBimestral/model/pasillo/pasillo.obj
 !ProyectoBimestral/model/pasillo/pasillo.mtl
