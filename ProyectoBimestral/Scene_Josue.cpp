@@ -24,6 +24,7 @@ extern enum SceneType { SCENE_PASILLO, SCENE_SAMY, SCENE_ANI, SCENE_MATTHEW, SCE
 extern SceneType g_CurrentScene;
 extern SceneType g_NextScene;
 extern int g_UnlockedLevel;
+extern bool g_ReturnedFromJosue;
 
 namespace Josue {
     void framebuffer_size_callback(GLFWwindow* window, int width, int height);
@@ -58,6 +59,19 @@ namespace Josue {
     static GameState gameState = PLAYING;
     static float stateTimer = 0.0f;
     static int selectedOption = 0; // 0 = Aceptar mi destino, 1 = No aceptar
+
+    // =========================================================
+    // ESTADOS PARA LA SALIDA CINEMÁTICA (Regreso al Pasillo)
+    // =========================================================
+    enum ExitPhase {
+        EXIT_NONE,
+        EXIT_WAIT_BLACK,
+        EXIT_FADE_IN,
+        EXIT_SHOW,
+        EXIT_FADE_OUT
+    };
+    static ExitPhase exitPhase = EXIT_NONE;
+    static float exitTimer = 0.0f;
 
     // =========================================================
     // ESCALA Y POSICIÓN
@@ -135,6 +149,8 @@ namespace Josue {
         fKeyPressedLastFrame = false;
         ambientPlayed = false;
         screamPlayed = false;
+        exitPhase = EXIT_NONE;
+        exitTimer = 0.0f;
 
         // --- INICIALIZAR AUDIO ---
         initaudio();
@@ -208,6 +224,61 @@ namespace Josue {
             lastFrame = absoluteTime;
 
             processInput(window);
+
+            // --- ESCENA DE SALIDA CINEMÁTICA ---
+            if (exitPhase != EXIT_NONE)
+            {
+                glDisable(GL_DEPTH_TEST);
+                glUseProgram(quadShaderProgram);
+                glBindVertexArray(quadVAO);
+
+                float fadeValue = 0.0f;
+                float fadeDuration = 2.0f;
+
+                if (exitPhase == EXIT_WAIT_BLACK)
+                {
+                    fadeValue = 0.0f;
+                    if (absoluteTime - exitTimer >= 2.0f) { // 2 Segundos iniciales en negro puro
+                        exitPhase = EXIT_FADE_IN;
+                        exitTimer = absoluteTime;
+                    }
+                }
+                else if (exitPhase == EXIT_FADE_IN)
+                {
+                    float progress = (absoluteTime - exitTimer) / fadeDuration;
+                    fadeValue = glm::clamp(progress, 0.0f, 1.0f);
+                    if (progress >= 1.0f) {
+                        exitPhase = EXIT_SHOW;
+                        exitTimer = absoluteTime;
+                    }
+                }
+                else if (exitPhase == EXIT_SHOW)
+                {
+                    fadeValue = 1.0f;
+                    if (absoluteTime - exitTimer >= 10.0f) { // 10 Segundos mostrando la imagen
+                        exitPhase = EXIT_FADE_OUT;
+                        exitTimer = absoluteTime;
+                    }
+                }
+                else if (exitPhase == EXIT_FADE_OUT)
+                {
+                    float progress = (absoluteTime - exitTimer) / fadeDuration;
+                    fadeValue = 1.0f - glm::clamp(progress, 0.0f, 1.0f);
+                    if (progress >= 1.0f) {
+                        g_ReturnedFromJosue = true;
+                        g_NextScene = SCENE_PASILLO; // Regreso automático al Pasillo
+                    }
+                }
+
+                glUniform1f(glGetUniformLocation(quadShaderProgram, "fade"), fadeValue);
+                glActiveTexture(GL_TEXTURE0);
+                glBindTexture(GL_TEXTURE_2D, ending1Texture);
+                glDrawArrays(GL_TRIANGLES, 0, 6);
+
+                glfwSwapBuffers(window);
+                glfwPollEvents();
+                continue; // Saltar el resto del bucle while
+            }
 
             // --- AUDIO: música de fondo apenas arranca el juego ---
             if (!ambientPlayed)
@@ -544,6 +615,11 @@ namespace Josue {
 
     void processInput(GLFWwindow* window)
     {
+        // --- BLOQUEO DE CONTROLES SI SE ESTÁ MOSTRANDO LA SALIDA CINEMÁTICA ---
+        if (exitPhase != EXIT_NONE) {
+            return;
+        }
+
         if (glfwGetKey(window, GLFW_KEY_ESCAPE) == GLFW_PRESS)
             glfwSetWindowShouldClose(window, true);
 
@@ -576,8 +652,11 @@ namespace Josue {
                     // ACEPTAR MI DESTINO -> Cerrar el juego
                     glfwSetWindowShouldClose(window, true);
                 } else {
-                    // NO ACEPTAR -> Regresar al Pasillo
-                    g_NextScene = SCENE_PASILLO;
+                    // NO ACEPTAR -> Regresar al Pasillo con transición
+                    exitPhase = EXIT_WAIT_BLACK;
+                    exitTimer = (float)glfwGetTime();
+                    haltmusic();
+                    haltsound();
                 }
             }
             return; // Bloquea todos los demás movimientos
@@ -590,8 +669,12 @@ namespace Josue {
 
         // Volver al Pasillo principal (Solo si está jugando normal o en reset)
         if (gameState == PLAYING || gameState == BLACK_SCREEN_RESET) {
-            if (glfwGetKey(window, GLFW_KEY_H) == GLFW_PRESS)
-                g_NextScene = SCENE_PASILLO;
+            if (glfwGetKey(window, GLFW_KEY_H) == GLFW_PRESS) {
+                exitPhase = EXIT_WAIT_BLACK;
+                exitTimer = (float)glfwGetTime();
+                haltmusic();
+                haltsound();
+            }
         }
 
         if (gameState != PLAYING) {

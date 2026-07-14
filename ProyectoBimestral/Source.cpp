@@ -9,6 +9,7 @@ enum SceneType { SCENE_PASILLO, SCENE_SAMY, SCENE_ANI, SCENE_MATTHEW, SCENE_JOSU
 SceneType g_CurrentScene = SCENE_PASILLO;
 SceneType g_NextScene = SCENE_PASILLO;
 int g_UnlockedLevel = 1; // Nivel desbloqueado progresivamente (1 a 4)
+bool g_ReturnedFromJosue = false;
 
 namespace Pasillo { void RunScene(GLFWwindow* window); }
 namespace Samy { void RunScene(GLFWwindow* window); }

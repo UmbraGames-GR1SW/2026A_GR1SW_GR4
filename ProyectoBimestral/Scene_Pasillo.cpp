@@ -14,10 +14,25 @@ extern enum SceneType { SCENE_PASILLO, SCENE_SAMY, SCENE_ANI, SCENE_MATTHEW, SCE
 extern SceneType g_CurrentScene;
 extern SceneType g_NextScene;
 extern int g_UnlockedLevel;
+extern bool g_ReturnedFromJosue;
 
 namespace Pasillo {
     static unsigned int SCR_WIDTH = 1920;
     static unsigned int SCR_HEIGHT = 1080;
+
+    // -------------------------------------------------------------------------------------
+    // ESTADOS PARA EL FINAL EN EL PASILLO
+    // -------------------------------------------------------------------------------------
+    enum HallwayEndingState {
+        END_NONE,
+        END_WAIT_1S,        // Espera de 1 segundo en el pasillo antes de mostrar ending 2
+        END_FADE_IN_2,      // Aparece lentamente la imagen de ending 2
+        END_WAIT_CHOICE,    // Muestra ending 2 esperando Y/N
+        END_ACCEPTED,       // Si elige Y (Acepta recuerdos) -> Muestra texto temporal y luego cierra
+        END_REJECTED        // Si elige N (Rechaza) -> Muestra mensaje temporal y luego cierra/reinicia
+    };
+    static HallwayEndingState hallwayEndingState = END_NONE;
+    static float hallwayEndingTimer = 0.0f;
 
     // -------------------------------------------------------------------------------------
     // ESTADOS PARA LA INTRODUCCIÓN CINEMÁTICA
@@ -132,6 +147,21 @@ namespace Pasillo {
 
     void processInput(GLFWwindow* window)
     {
+        // --- BLOQUEO DE CONTROLES DURANTE EL FINAL EN EL PASILLO ---
+        if (hallwayEndingState != END_NONE) {
+            if (hallwayEndingState == END_WAIT_CHOICE) {
+                if (glfwGetKey(window, GLFW_KEY_Y) == GLFW_PRESS) {
+                    hallwayEndingState = END_ACCEPTED;
+                    hallwayEndingTimer = static_cast<float>(glfwGetTime());
+                }
+                else if (glfwGetKey(window, GLFW_KEY_N) == GLFW_PRESS) {
+                    hallwayEndingState = END_REJECTED;
+                    hallwayEndingTimer = static_cast<float>(glfwGetTime());
+                }
+            }
+            return;
+        }
+
         if (glfwGetKey(window, GLFW_KEY_ESCAPE) == GLFW_PRESS)
             glfwSetWindowShouldClose(window, true);
 
@@ -228,6 +258,15 @@ namespace Pasillo {
         // Reiniciar variables para cuando se regrese a esta escena
         enterPressedLastFrame = false;
 
+        // Comprobar si se regresó de la escena de Josué para disparar el final
+        if (g_ReturnedFromJosue) {
+            hallwayEndingState = END_WAIT_1S;
+            hallwayEndingTimer = static_cast<float>(glfwGetTime());
+            g_ReturnedFromJosue = false;
+        } else {
+            hallwayEndingState = END_NONE;
+        }
+
         // Lógica de primera vez: solo inicializa la intro si es el primer arranque del programa
         if (firstTimeEver) {
             introPhase = INTRO_WAIT_BLACK;
@@ -252,6 +291,7 @@ namespace Pasillo {
         // ---- CONFIGURACIÓN DEL QUAD Y SHADERS PARA LA PANTALLA DE INTRO ----
         unsigned int introTexture = loadTexture("./model/pasillo/intro_message.jpg"); // Asegúrate de tener esta imagen
         unsigned int introTexture2 = loadTexture("./model/pasillo/intro_message_2.png");
+        unsigned int ending2Texture = loadTexture("./model/exit/ending2.jpeg");
 
         float quadVertices[] = {
             // Posiciones   // Texturas
@@ -307,8 +347,100 @@ namespace Pasillo {
 
             processInput(window);
 
+            if (hallwayEndingState == END_WAIT_1S) {
+                if (currentFrame - hallwayEndingTimer >= 1.0f) {
+                    hallwayEndingState = END_FADE_IN_2;
+                    hallwayEndingTimer = currentFrame;
+                }
+            }
+
             glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
             glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+
+            // -------------------------------------------------------------------------------------
+            // LÓGICA DE FASE DEL FINAL EN EL PASILLO (ending2.jpeg con Y/N)
+            // -------------------------------------------------------------------------------------
+            if (hallwayEndingState != END_NONE && hallwayEndingState != END_WAIT_1S)
+            {
+                glDisable(GL_DEPTH_TEST);
+                glUseProgram(quadShaderProgram);
+                glBindVertexArray(quadVAO);
+
+                float fadeValue = 0.0f;
+                float fadeDuration = 2.0f;
+
+                if (hallwayEndingState == END_FADE_IN_2)
+                {
+                    float progress = (currentFrame - hallwayEndingTimer) / fadeDuration;
+                    fadeValue = glm::clamp(progress, 0.0f, 1.0f);
+                    if (progress >= 1.0f) {
+                        hallwayEndingState = END_WAIT_CHOICE;
+                    }
+                }
+                else if (hallwayEndingState == END_WAIT_CHOICE)
+                {
+                    fadeValue = 1.0f;
+                }
+                else if (hallwayEndingState == END_ACCEPTED || hallwayEndingState == END_REJECTED)
+                {
+                    fadeValue = 1.0f;
+                }
+
+                glUniform1f(glGetUniformLocation(quadShaderProgram, "fade"), fadeValue);
+                glActiveTexture(GL_TEXTURE0);
+                glBindTexture(GL_TEXTURE_2D, ending2Texture);
+                glDrawArrays(GL_TRIANGLES, 0, 6);
+
+                // Renderizar textos sobre el quad del final
+                float sw = static_cast<float>(SCR_WIDTH);
+                float sh = static_cast<float>(SCR_HEIGHT);
+
+                if (hallwayEndingState == END_WAIT_CHOICE)
+                {
+                    // Preguntar Y/N
+                    std::string promptText = "¿Aceptas tus recuerdos?";
+                    float wp = GetTextWidth(promptText, 0.6f);
+                    RenderText(textShader, promptText, (sw - wp) / 2.0f, sh / 2.0f, 0.6f, glm::vec3(0.0f, 0.0f, 0.0f), sw, sh);
+
+                    std::string promptText2 = "[Y] Si  /  [N] No";
+                    float wp2 = GetTextWidth(promptText2, 0.5f);
+                    RenderText(textShader, promptText2, (sw - wp2) / 2.0f, sh / 2.0f - 80.0f, 0.5f, glm::vec3(0.0f, 0.0f, 0.0f), sw, sh);
+                }
+                else if (hallwayEndingState == END_ACCEPTED)
+                {
+                    float timeElapsed = currentFrame - hallwayEndingTimer;
+                    if (timeElapsed < 3.0f) {
+                        std::string tempText = "Aceptando recuerdos...";
+                        float wt = GetTextWidth(tempText, 0.5f);
+                        RenderText(textShader, tempText, (sw - wt) / 2.0f, sh / 2.0f, 0.5f, glm::vec3(0.0f, 0.0f, 0.0f), sw, sh);
+                    } else if (timeElapsed < 6.0f) {
+                        std::string endText = "JUEGO TERMINADO";
+                        float we = GetTextWidth(endText, 0.7f);
+                        RenderText(textShader, endText, (sw - we) / 2.0f, sh / 2.0f, 0.7f, glm::vec3(0.0f, 0.5f, 0.0f), sw, sh);
+                    } else {
+                        glfwSetWindowShouldClose(window, true);
+                    }
+                }
+                else if (hallwayEndingState == END_REJECTED)
+                {
+                    float timeElapsed = currentFrame - hallwayEndingTimer;
+                    if (timeElapsed < 3.0f) {
+                        std::string tempText = "Rechazando recuerdos...";
+                        float wt = GetTextWidth(tempText, 0.5f);
+                        RenderText(textShader, tempText, (sw - wt) / 2.0f, sh / 2.0f, 0.5f, glm::vec3(0.0f, 0.0f, 0.0f), sw, sh);
+                    } else if (timeElapsed < 6.0f) {
+                        std::string endText = "HAS PERDIDO EL JUEGO";
+                        float we = GetTextWidth(endText, 0.7f);
+                        RenderText(textShader, endText, (sw - we) / 2.0f, sh / 2.0f, 0.7f, glm::vec3(0.7f, 0.0f, 0.0f), sw, sh);
+                    } else {
+                        glfwSetWindowShouldClose(window, true);
+                    }
+                }
+
+                glfwSwapBuffers(window);
+                glfwPollEvents();
+                continue;
+            }
 
             // -------------------------------------------------------------------------------------
             // LÓGICA DE LA FASE INTRODUCTORIA
@@ -404,6 +536,8 @@ namespace Pasillo {
                     float sw = static_cast<float>(SCR_WIDTH);
                     float sh = static_cast<float>(SCR_HEIGHT);
 
+                    // No programmatic text here; it's already in intro_message_2.png
+                    /*
                     if (introPhase == INTRO_FADE_IN_IMG_2 || introPhase == INTRO_WAIT_ENTER_2 || introPhase == INTRO_FADE_OUT_IMG_2) {
                         float scale = 0.7f;
                         float lineSpacing = 65.0f;
@@ -424,18 +558,23 @@ namespace Pasillo {
                             RenderText(textShader, introLines[i], x, y, scale, glm::vec3(0.0f, 0.0f, 0.0f), sw, sh, fadeValue);
                         }
                     }
+                    */
 
                     // Mensajes para continuar con ENTER
+                    /*
                     if (introPhase == INTRO_WAIT_ENTER_1) {
                         std::string continueText = "[ Presione ENTER para ingresar ]";
                         float cw = GetTextWidth(continueText, 0.4f);
                         RenderText(textShader, continueText, (sw - cw) / 2.0f, 80.0f, 0.4f, glm::vec3(0.7f, 0.7f, 0.7f), sw, sh);
                     }
+                    */
+                    /*
                     else if (introPhase == INTRO_WAIT_ENTER_2) {
                         std::string continueText = "[ Presione ENTER para ingresar ]";
                         float cw = GetTextWidth(continueText, 0.5f);
                         RenderText(textShader, continueText, (sw - cw) / 2.0f, 80.0f, 0.5f, glm::vec3(0.0f, 0.0f, 0.0f), sw, sh);
                     }
+                    */
 
                     glfwSwapBuffers(window);
                     glfwPollEvents();
