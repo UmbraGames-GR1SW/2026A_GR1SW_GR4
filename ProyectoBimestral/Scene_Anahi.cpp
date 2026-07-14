@@ -36,15 +36,15 @@ namespace Anahi {
     void ClampPlayerToScene(float revealPayaso, float revealChuky, float revealHacha, float revealDanger, float revealMascara);
 
     // settings
-    static unsigned int SCR_WIDTH = 800;
-    static unsigned int SCR_HEIGHT = 600;
+    static unsigned int SCR_WIDTH = 1920;
+    static unsigned int SCR_HEIGHT = 1080;
 
     // -------------------------------------------------------------------------------------
     // PERSONAJE / CAMARA
     // -------------------------------------------------------------------------------------
     static Camera camera(glm::vec3(0.0f, 1.2f, 4.0f));
-    static float lastX = 800.0f / 2.0f;
-    static float lastY = 600.0f / 2.0f;
+    static float lastX = 1920.0f / 2.0f;
+    static float lastY = 1080.0f / 2.0f;
     static bool firstMouse = true;
 
     static float bobbingTimer = 0.0f;
@@ -160,7 +160,7 @@ namespace Anahi {
         Shader ourShader("shaders/Vertex_Anahi.vs", "shaders/Fragment_Anahi.fs");
 
         // ---- CARGA DE MODELOS ----
-        Model garageModel("./model/garage/garage.obj");
+        Model garageModel("./model/garage_ani/garage_ani.obj");
         Model clownModel("./model/payaso/payaso.obj");
         Model chukyModel("./model/chuky/chuky.obj");
         Model hachaModel("./model/hacha/hacha.obj");
