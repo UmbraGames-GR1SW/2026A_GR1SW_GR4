@@ -399,4 +399,12 @@ Release/
 !ProyectoBimestral/model/garage_ani/garage_ani.mtl
 !ProyectoBimestral/model/garage_ani/Material_baseColor.png
 !ProyectoBimestral/model/garage_ani/Material_normal.png
+
+# Excepciones para subir los assets de Zombie_torso
+!ProyectoBimestral/model/Zombie_torso/zombie.obj
+!ProyectoBimestral/model/Zombie_torso/zombie.mtl
+
+# Excepciones para subir los assets de C_Tree
+!ProyectoBimestral/model/C_Tree/C_tree.obj
+!ProyectoBimestral/model/C_Tree/C_tree.mtl
 *.bmp
