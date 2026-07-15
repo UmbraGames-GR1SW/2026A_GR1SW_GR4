@@ -121,10 +121,10 @@ Esto permite que cada integrante trabaje su sala de forma independiente sin pisa
 
 ## Cómo compilar y correr
 
-1. Abrir `ProyectoBimestral.slnx` con Visual Studio 2022.
+1. Abrir `ProyectoBimestral.slnx` con Visual Studio.
 2. Configuración `Debug` / plataforma `x64`.
 3. Las dependencias precompiladas (Assimp, FreeType, GLFW) ya están en `ProyectoBimestral_Stuff/Library/`. **Importante**: hace falta que `assimp-vc145-mtd.dll` esté físicamente en la misma carpeta que el `.exe` compilado (`x64/Debug/`) para poder ejecutar — si no está, agregar un evento posterior a compilación que la copie automáticamente, o copiarla a mano la primera vez.
-4. Compilar y ejecutar con `F5`.
+4. Compilar y ejecutar.
 
 ---
 
