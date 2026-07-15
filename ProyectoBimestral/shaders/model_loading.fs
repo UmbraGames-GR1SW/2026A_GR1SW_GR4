@@ -39,6 +39,7 @@ uniform float desaturation;
 uniform float uTime;
 uniform float contrastPower;
 uniform float grainAmount;
+uniform float dread; // 0..1, cercania del perseguidor -- late de vinieta continuo
 
 // Golpe visual breve: 0 = nada, 1 = flash total. Se dispara desde C++
 // en el instante justo en que la linterna se corta.
@@ -133,14 +134,18 @@ void main()
     float grain = fract(sin(grainSeed) * 43758.5453) - 0.5;
     result += grain * grainAmount;
 
-    // Vinieta con tinte rojizo sucio en los bordes en vez de negro puro
+    // Vinieta con tinte rojizo sucio en los bordes en vez de negro puro.
+    // "dread" (0..1, cercania del perseguidor) le agrega un latido que
+    // cierra la vinieta y sube el tinte rojo, incluso fuera del jumpscare.
+    float heartbeat = 0.5 + 0.5 * sin(uTime * 5.5);
+    float dreadPulse = dread * heartbeat;
     vec2 uv = gl_FragCoord.xy / screenSize;
-    float vig = smoothstep(0.75, 0.20, length(uv - vec2(0.5)));
-    vec3 vigTint = vec3(0.05, 0.0, 0.0);
+    float vig = smoothstep(0.75, 0.20 - dreadPulse * 0.10, length(uv - vec2(0.5)));
+    vec3 vigTint = vec3(0.05 + dreadPulse * 0.12, 0.0, 0.0);
     result = mix(result * 0.08 + vigTint, result, vig);
 
     // Golpe visual: flash rojo breve, se desvanece rapido
-    result = mix(result, vec3(0.55, 0.02, 0.02), startleFlash);
+    result = mix(result, vec3(0.85, 0.03, 0.03), startleFlash);
 
     FragColor = vec4(max(result, vec3(0.0)), 1.0);
 }

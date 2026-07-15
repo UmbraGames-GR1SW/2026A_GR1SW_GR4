@@ -162,13 +162,13 @@ namespace Warehouse {
     // flash rojo + linterna estroboscopica + golpe de zoom. Con
     // enfriamiento global para que no se repita todo el tiempo.
     static const bool  JUMPSCARE_STARE_ENABLED = true;
-    static const float JUMPSCARE_STARE_DURATION = 3.0f;   // segundos mirando fijo para disparar
+    static const float JUMPSCARE_STARE_DURATION = 1.6f;   // segundos mirando fijo para disparar (bajado de 3.0)
     static const float JUMPSCARE_STARE_MAX_DISTANCE = 9.0f;
     static const float JUMPSCARE_STARE_FOV_ANGLE_DEG = 12.0f;
-    static const float JUMPSCARE_EFFECT_DURATION = 0.7f; // cuanto dura el golpe (flash+zoom+estrobo+shake)
-    static const float JUMPSCARE_IMAGE_DURATION = 0.85f;  // cuanto dura la imagen en pantalla (negro+estrobo+sostenido+corte)
-    static const float JUMPSCARE_COOLDOWN = 22.0f;        // minimo entre sustos
-    static const float JUMPSCARE_ZOOM_PUNCH = 24.0f;      // grados de FOV que se suman de golpe
+    static const float JUMPSCARE_EFFECT_DURATION = 0.8f; // cuanto dura el golpe (flash+zoom+estrobo+shake)
+    static const float JUMPSCARE_IMAGE_DURATION = 0.95f;  // cuanto dura la imagen en pantalla (negro+estrobo+sostenido+corte)
+    static const float JUMPSCARE_COOLDOWN = 9.0f;         // bajado de 22: que pueda repetirse mas seguido
+    static const float JUMPSCARE_ZOOM_PUNCH = 34.0f;      // subido: golpe de zoom mas brusco
     static const std::string JUMPSCARE_IMAGE_PATH = "./model/exit/scream.jpeg";
 
     // -----------------------------------------------------------
@@ -204,8 +204,14 @@ namespace Warehouse {
     static const float ZOMBIE_APPROACH_SPEED = 2.3f;             // rapido: real amenaza si no lo mirás
     static const float ZOMBIE_APPROACH_LOOK_ANGLE_DEG = 25.0f;   // cono generoso: facil "volver a verlo" y congelarlo
     static const float ZOMBIE_APPROACH_LOOK_MAX_DISTANCE = 40.0f; // cubre casi toda la sala
-    static const float ZOMBIE_APPROACH_STOP_DISTANCE = 2.2f;     // guarda distancia, no se pega a la camara
+    static const float ZOMBIE_APPROACH_STOP_DISTANCE = 3.4f;     // mas rango: ya no queda pegado a la camara
     static const float ZOMBIE_APPROACH_ATTACK_DISTANCE = 1.1f;   // si llega aca sin ser visto, jumpscare
+
+    // "Territorio": no te persigue infinito. Si te alejas mas de esto
+    // desde SU punto de spawn original (cerca del arbol), se frena y
+    // queda quieto ahi -- como llegando "un poco antes de la puerta y
+    // no mas". Si volves a acercarte, retoma la persecucion.
+    static const float ZOMBIE_APPROACH_MAX_RANGE = 20.0f;
 
     // Embestida: si te quedas SIN mirarlo mientras esta relativamente cerca
     // (dentro de ENGAGE_RANGE) por varios segundos seguidos, cierra la
@@ -214,11 +220,16 @@ namespace Warehouse {
     // ignoras del todo. Despues de atacar, se retira a su posicion
     // original y espera un rato antes de volver a acercarse -- asi el
     // efecto de persecucion se repite en vez de terminar una sola vez.
-    static const float ZOMBIE_LUNGE_ENGAGE_RANGE = 7.0f;
-    static const float ZOMBIE_LUNGE_THRESHOLD = 4.0f;
+    static const float ZOMBIE_LUNGE_ENGAGE_RANGE = 9.0f;
+    static const float ZOMBIE_LUNGE_THRESHOLD = 1.6f;     // bajado de 4.0: embiste mucho mas seguido
     static const float ZOMBIE_RETREAT_GRACE_DURATION = 5.0f;
     static float g_pursuerLungeTimer = 0.0f;
     static float g_pursuerRetreatUntil = -1000.0f;
+
+    // Aviso de cercania: suena UNA vez cada vez que cruza de "lejos" a
+    // "cerca" (no en bucle), distinto del jumpscare que es al tocarte.
+    static const float ZOMBIE_WARNING_RANGE = 5.5f;
+    static bool g_pursuerWasNear = false;
 
     // ---------------------------------------------------------
     // Configuración de escala / jugador
@@ -365,8 +376,8 @@ namespace Warehouse {
     // Contraste crudo: >1 aplasta las sombras a negro (no se "adivina" lo que
     // hay en la oscuridad); 1.0 = sin cambio. Grano: textura sucia tipo
     // camara vieja/found footage, 0 = sin grano.
-    static const float CONTRAST_POWER = 1.35f;
-    static const float GRAIN_AMOUNT = 0.065f;
+    static const float CONTRAST_POWER = 1.45f;
+    static const float GRAIN_AMOUNT = 0.085f;
 
     // Indices de malla a excluir por completo de la colision (por ejemplo
     // una lampara colgante, cables, o el "shell" exterior/techo si genera
@@ -395,7 +406,7 @@ namespace Warehouse {
     // Golpe visual: momento en que se disparo el ultimo flash (para el corte
     // de linterna). -1000 = nunca, asi el primer frame no dispara nada.
     static float g_startleTriggerTime = -1000.0f;
-    static const float STARTLE_FLASH_DURATION = 0.18f;
+    static const float STARTLE_FLASH_DURATION = 0.28f;
 
     // Estado del jumpscare (imagen a pantalla completa)
     static float g_jumpscareTriggerTime = -1000.0f;
@@ -416,7 +427,7 @@ namespace Warehouse {
     static int g_pursuerIndex = -1;
 
     // Sacudida de camara durante el jumpscare
-    static const float JUMPSCARE_SHAKE_AMOUNT = 0.18f;
+    static const float JUMPSCARE_SHAKE_AMOUNT = 0.32f;
 
     // Apagon real por foco: cada luz roja tiene su propio ciclo de
     // encendido/apagado (periodo y duracion del apagon distintos entre si,
@@ -428,6 +439,7 @@ namespace Warehouse {
     static const float RED_LIGHT_OFF_DURATION_MIN = 12.0f; // cuanto dura el apagon (min) -- largo, para que se note bien
     static const float RED_LIGHT_OFF_DURATION_MAX = 18.0f; // cuanto dura el apagon (max)
     static std::vector<bool> g_redLightWasOff;
+    static std::vector<bool> g_redLightWasPreStutter;
 
     enum ExitPhase { EXIT_NONE, EXIT_WAIT_BLACK, EXIT_FADE_IN, EXIT_SHOW, EXIT_FADE_OUT };
     static ExitPhase exitPhase = EXIT_NONE;
@@ -838,6 +850,7 @@ namespace Warehouse {
         g_ornamentLightPositions.clear();
         g_ornamentLightColors.clear();
         g_redLightWasOff.clear();
+        g_redLightWasPreStutter.clear();
         g_jumpscareTriggerTime = -1000.0f;
         g_jumpscareCooldownUntil = -1000.0f;
         g_jumpscareActive = false;
@@ -849,6 +862,7 @@ namespace Warehouse {
         g_nextPresenceSoundTime = -1.0f;
         g_pursuerLungeTimer = 0.0f;
         g_pursuerRetreatUntil = -1000.0f;
+        g_pursuerWasNear = false;
         exitPhase = EXIT_NONE;
         exitTimer = 0.0f;
 
@@ -890,6 +904,7 @@ namespace Warehouse {
         preloadSound(SOUND_LIGHT_FX_PATH.c_str(), "lightfx");
         preloadSound(SOUND_CEILING_BLACKOUT_PATH.c_str(), "ceilingfail");
         preloadSound(SOUND_PRESENCE_PATH.c_str(), "presence");
+        preloadSound(SOUND_PRESENCE_PATH.c_str(), "warning");
         playmusic(SOUND_AMBIENT_MUSIC_PATH.c_str());
 
         // -------------------- Jumpscare: shader, textura e imagen a pantalla completa --------------------
@@ -1543,6 +1558,8 @@ namespace Warehouse {
             const float GOLDEN_ANGLE = 2.399963f;
             if (g_redLightWasOff.size() != g_redLightPositions.size())
                 g_redLightWasOff.assign(g_redLightPositions.size(), false);
+            if (g_redLightWasPreStutter.size() != g_redLightPositions.size())
+                g_redLightWasPreStutter.assign(g_redLightPositions.size(), false);
 
             std::vector<float> perLightIntensity(g_redLightPositions.size());
             for (size_t i = 0; i < g_redLightPositions.size(); i++)
@@ -1566,6 +1583,13 @@ namespace Warehouse {
                 bool isPreOffStutter = cyclePos >= (period - PRE_OFF_STUTTER);
                 bool isPostOnStutter = !isOff && cyclePos < (offDuration + POST_ON_STUTTER);
 
+                if (isPreOffStutter != g_redLightWasPreStutter[i])
+                {
+                    g_redLightWasPreStutter[i] = isPreOffStutter;
+                    if (isPreOffStutter)
+                        playPreloaded("ceilingfail"); // arranca el crujido justo cuando empieza a fallar, no cuando ya esta oscura
+                }
+
                 if (isPreOffStutter || isPostOnStutter)
                 {
                     float stutterStep = floorf(currentFrame * STUTTER_RATE + (float)i * 3.7f);
@@ -1576,8 +1600,6 @@ namespace Warehouse {
                 if (isOff != g_redLightWasOff[i])
                 {
                     g_redLightWasOff[i] = isOff;
-                    if (isOff)
-                        playPreloaded("ceilingfail");
                 }
                 if (isOff)
                     value = 0.0f;
@@ -1626,6 +1648,17 @@ namespace Warehouse {
             ourShader.setFloat("uTime", currentFrame);
             ourShader.setFloat("contrastPower", CONTRAST_POWER);
             ourShader.setFloat("grainAmount", GRAIN_AMOUNT);
+
+            // Dread continuo: 0 si no hay perseguidor activo o esta lejos,
+            // sube cuanto mas cerca este (usa el mismo radio que el aviso
+            // de cercania para que quede coherente con el resto).
+            float dread = 0.0f;
+            if (g_pursuerIndex >= 0 && g_pursuerIndex < (int)g_zombieCurrentXZ.size())
+            {
+                float d = glm::length(glm::vec2(camera.Position.x, camera.Position.z) - g_zombieCurrentXZ[g_pursuerIndex]);
+                dread = glm::clamp(1.0f - d / (ZOMBIE_WARNING_RANGE * 2.0f), 0.0f, 1.0f);
+            }
+            ourShader.setFloat("dread", dread);
 
             float startleElapsed = currentFrame - g_startleTriggerTime;
             float startleFlash = (startleElapsed >= 0.0f && startleElapsed < STARTLE_FLASH_DURATION)
@@ -1725,7 +1758,26 @@ namespace Warehouse {
                                 g_zombieCurrentXZ[nearestIdx].y += step.y;
 
                             g_zombieMoveYaw[nearestIdx] = glm::degrees(atan2f(dir.x, dir.y));
+
+                            // Limite de "territorio": si el paso lo saco mas
+                            // alla de su rango maximo desde su spawn original,
+                            // lo dejamos justo en el borde -- se queda ahi
+                            // quieto en vez de perseguir por todo el warehouse.
+                            glm::vec2 pursuerSpawnXZ(repeatedInstances[nearestIdx].worldPos.x, repeatedInstances[nearestIdx].worldPos.z);
+                            float distFromSpawn = glm::length(g_zombieCurrentXZ[nearestIdx] - pursuerSpawnXZ);
+                            if (distFromSpawn > ZOMBIE_APPROACH_MAX_RANGE)
+                            {
+                                glm::vec2 dirFromSpawn = (g_zombieCurrentXZ[nearestIdx] - pursuerSpawnXZ) / distFromSpawn;
+                                g_zombieCurrentXZ[nearestIdx] = pursuerSpawnXZ + dirFromSpawn * ZOMBIE_APPROACH_MAX_RANGE;
+                            }
                         }
+
+                        // Aviso de cercania: suena UNA vez al cruzar de lejos
+                        // a cerca (no se repite mientras se mantiene cerca).
+                        bool isNearNow = distXZ < ZOMBIE_WARNING_RANGE;
+                        if (isNearNow && !g_pursuerWasNear)
+                            playPreloaded("warning");
+                        g_pursuerWasNear = isNearNow;
 
                         // Embestida: si te quedas sin mirarlo mientras esta
                         // relativamente cerca por varios segundos seguidos,
@@ -1761,11 +1813,15 @@ namespace Warehouse {
                             std::cout << "[DEBUG] *** JUMPSCARE *** Zombie " << nearestIdx << " te alcanzo." << std::endl;
 
                             // Retirada: vuelve a su posicion original (cerca
-                            // del arbol) y espera antes de volver a acercarse
-                            // -- asi el ciclo de persecucion se repite.
+                            // del arbol) y espera antes de volver a acercarse.
+                            // Ademas se resetea el indice de perseguidor: la
+                            // PROXIMA vez se re-evalua cual es el mas cercano
+                            // (puede ser el mismo u otro distinto).
                             g_zombieCurrentXZ[nearestIdx] = glm::vec2(repeatedInstances[nearestIdx].worldPos.x, repeatedInstances[nearestIdx].worldPos.z);
                             g_pursuerRetreatUntil = currentFrame + ZOMBIE_RETREAT_GRACE_DURATION;
                             g_pursuerLungeTimer = 0.0f;
+                            g_pursuerWasNear = false;
+                            g_pursuerIndex = -1;
                             std::cout << "[DEBUG] Zombie " << nearestIdx << " se retira, vuelve a acercarse en " << ZOMBIE_RETREAT_GRACE_DURATION << "s." << std::endl;
                         }
                     }
@@ -2003,6 +2059,7 @@ namespace Warehouse {
         closePreloaded("lightfx");
         closePreloaded("ceilingfail");
         closePreloaded("presence");
+        closePreloaded("warning");
 
         // Liberar recursos
         if (extraModel)
