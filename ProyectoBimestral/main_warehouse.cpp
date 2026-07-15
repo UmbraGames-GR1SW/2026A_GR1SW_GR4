@@ -222,7 +222,7 @@ namespace Warehouse {
     // "embestida" que cierra la distancia de golpe -- ahora tiene que
     // CAMINAR de verdad hasta tocarte para que dispare el jumpscare, sin
     // detenerse antes por un rango artificial.
-    static const float ZOMBIE_APPROACH_STOP_DISTANCE = 1.3f;
+    static const float ZOMBIE_APPROACH_STOP_DISTANCE = 0.6f;     // por DEBAJO de la de ataque, para que si la cruce
     static const float ZOMBIE_APPROACH_ATTACK_DISTANCE = 1.1f;   // si llega aca sin ser visto, jumpscare
 
     // "Territorio": no te persigue infinito. Si te alejas mas de esto
