@@ -166,6 +166,8 @@
     <None Include="shaders\model_loading.vs" />
     <None Include="shaders\text_samy.fs" />
     <None Include="shaders\text_samy.vs" />
+    <None Include="shaders\text_warehouse.fs" />
+    <None Include="shaders\text_warehouse.vs" />
     <None Include="shaders\Vertex_Samy.vs" />
   </ItemGroup>
   <ItemGroup>

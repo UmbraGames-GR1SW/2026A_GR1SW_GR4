@@ -58,6 +58,12 @@
     <None Include="shaders\light_billboard.vs" />
     <None Include="shaders\model_loading.fs" />
     <None Include="shaders\model_loading.vs" />
+    <None Include="shaders\text_warehouse.fs">
+      <Filter>Archivos de origen\shaders</Filter>
+    </None>
+    <None Include="shaders\text_warehouse.vs">
+      <Filter>Archivos de origen\shaders</Filter>
+    </None>
   </ItemGroup>
   <ItemGroup>
     <Text Include="shaders\jumpscare.vs" />

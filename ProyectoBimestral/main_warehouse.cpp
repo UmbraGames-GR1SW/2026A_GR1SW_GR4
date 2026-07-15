@@ -18,6 +18,7 @@
 #include <learnopengl/model.h>
 #include <learnopengl/stb_image.h>
 #include <learnopengl/audio.h>
+#include <learnopengl/text_renderer.h>
 
 #include <iostream>
 #include <string>
@@ -42,6 +43,19 @@ namespace Warehouse {
     // settings
     static unsigned int SCR_WIDTH = 1280;
     static unsigned int SCR_HEIGHT = 720;
+
+    // -----------------------------------------------------------
+    // HUD: controles + info de la sala (arriba a la izquierda, como en
+    // las demas escenas del equipo) y aviso de "salida cerca" (abajo).
+    // -----------------------------------------------------------
+    static bool showMenu = true; // se puede ocultar/mostrar con M, igual que en las otras escenas
+
+    // Que tan cerca del extremo opuesto al spawn (donde deja de haber
+    // pared y solo queda piso) tiene que estar el jugador para que
+    // aparezca el aviso de "recuerdo completado". Es una fraccion de la
+    // diagonal del edificio (0 = en el spawn, 1 = en la esquina opuesta).
+    // Ajustar si aparece antes/despues de lo esperado en tu mapa real.
+    static const float EXIT_MESSAGE_DISTANCE_FRAC = 0.82f;
 
     // -----------------------------------------------------------
     // Modelo extra: se carga, escala y ubica cerca (no exacto) del centro
@@ -944,6 +958,10 @@ namespace Warehouse {
 
         playmusic(SOUND_AMBIENT_MUSIC_PATH.c_str());
         float g_nextMusicCheckTime = -1.0f;
+
+        // -------------------- HUD: texto (controles + avisos) --------------------
+        InitFreeType("fonts/arial.ttf");
+        Shader textShader("shaders/text_warehouse.vs", "shaders/text_warehouse.fs");
 
         // -------------------- Jumpscare: shader, textura e imagen a pantalla completa --------------------
         Shader jumpscareShader("shaders/jumpscare.vs", "shaders/jumpscare.fs");
@@ -2120,6 +2138,41 @@ namespace Warehouse {
                 glEnable(GL_DEPTH_TEST);
             }
 
+            // -------- HUD: controles + info de sala (arriba a la izquierda) --------
+            if (showMenu)
+            {
+                float startY = (float)SCR_HEIGHT - 40.0f;
+                float stepY = 32.0f;
+                RenderText(textShader, "-- BODEGA NAVIDENA --", 30.0f, startY, 0.55f, glm::vec3(0.9f, 0.15f, 0.15f), (float)SCR_WIDTH, (float)SCR_HEIGHT);
+                RenderText(textShader, "Encontra la salida antes de que te alcancen", 30.0f, startY - stepY, 0.4f, glm::vec3(0.8f, 0.8f, 0.8f), (float)SCR_WIDTH, (float)SCR_HEIGHT);
+                RenderText(textShader, "WASD: Moverse", 30.0f, startY - 3 * stepY, 0.45f, glm::vec3(1.0f, 1.0f, 1.0f), (float)SCR_WIDTH, (float)SCR_HEIGHT);
+                RenderText(textShader, "Mouse: Mirar alrededor", 30.0f, startY - 4 * stepY, 0.45f, glm::vec3(1.0f, 1.0f, 1.0f), (float)SCR_WIDTH, (float)SCR_HEIGHT);
+                RenderText(textShader, "M: Ocultar/mostrar este menu", 30.0f, startY - 5 * stepY, 0.45f, glm::vec3(1.0f, 1.0f, 1.0f), (float)SCR_WIDTH, (float)SCR_HEIGHT);
+                RenderText(textShader, "H: Volver al Pasillo principal", 30.0f, startY - 6 * stepY, 0.45f, glm::vec3(0.9f, 0.2f, 0.2f), (float)SCR_WIDTH, (float)SCR_HEIGHT);
+            }
+
+            // -------- Aviso de salida cerca (abajo, centrado) --------
+            {
+                glm::vec2 spawnXZforExit(
+                    g_worldAABB.min.x + SPAWN_X_FRAC * (g_worldAABB.max.x - g_worldAABB.min.x),
+                    g_worldAABB.min.z + SPAWN_Z_FRAC * (g_worldAABB.max.z - g_worldAABB.min.z)
+                );
+                float buildingDiagonal = glm::length(glm::vec2(g_worldAABB.max.x - g_worldAABB.min.x, g_worldAABB.max.z - g_worldAABB.min.z));
+                float playerProgressForExit = glm::length(glm::vec2(camera.Position.x, camera.Position.z) - spawnXZforExit);
+
+                if (playerProgressForExit >= buildingDiagonal * EXIT_MESSAGE_DISTANCE_FRAC)
+                {
+                    std::string exitMsg = "Recuerdo completado. Pulsa H";
+                    float scale = 0.6f;
+                    float textWidth = GetTextWidth(exitMsg, scale);
+                    float xPos = ((float)SCR_WIDTH - textWidth) / 2.0f;
+                    float yPos = 60.0f;
+
+                    RenderText(textShader, exitMsg, xPos + 2.0f, yPos - 2.0f, scale, glm::vec3(0.0f, 0.0f, 0.0f), (float)SCR_WIDTH, (float)SCR_HEIGHT);
+                    RenderText(textShader, exitMsg, xPos, yPos, scale, glm::vec3(0.9f, 0.15f, 0.15f), (float)SCR_WIDTH, (float)SCR_HEIGHT);
+                }
+            }
+
             glfwSwapBuffers(window);
             glfwPollEvents();
         }
@@ -2187,6 +2240,18 @@ namespace Warehouse {
         else
         {
             f1WasPressed = false;
+        }
+
+        static bool mWasPressed = false;
+        if (glfwGetKey(window, GLFW_KEY_M) == GLFW_PRESS)
+        {
+            if (!mWasPressed)
+                showMenu = !showMenu;
+            mWasPressed = true;
+        }
+        else
+        {
+            mWasPressed = false;
         }
 
         float velocity = camera.MovementSpeed * deltaTime;
