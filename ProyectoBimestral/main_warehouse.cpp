@@ -218,7 +218,11 @@ namespace Warehouse {
     static const float ZOMBIE_APPROACH_SPEED = 1.05f;             // ritmo de zombie real, no de corredor
     static const float ZOMBIE_APPROACH_LOOK_ANGLE_DEG = 25.0f;   // cono generoso: facil "volver a verlo" y congelarlo
     static const float ZOMBIE_APPROACH_LOOK_MAX_DISTANCE = 40.0f; // cubre casi toda la sala
-    static const float ZOMBIE_APPROACH_STOP_DISTANCE = 3.4f;     // mas rango: ya no queda pegado a la camara
+    // Distancia de parada MUY cerca de la de contacto: ya no hay
+    // "embestida" que cierra la distancia de golpe -- ahora tiene que
+    // CAMINAR de verdad hasta tocarte para que dispare el jumpscare, sin
+    // detenerse antes por un rango artificial.
+    static const float ZOMBIE_APPROACH_STOP_DISTANCE = 1.3f;
     static const float ZOMBIE_APPROACH_ATTACK_DISTANCE = 1.1f;   // si llega aca sin ser visto, jumpscare
 
     // "Territorio": no te persigue infinito. Si te alejas mas de esto
@@ -227,27 +231,22 @@ namespace Warehouse {
     // no mas". Si volves a acercarte, retoma la persecucion.
     static const float ZOMBIE_APPROACH_MAX_RANGE = 20.0f;
 
-    // Embestida: si te quedas SIN mirarlo mientras esta relativamente cerca
-    // (dentro de ENGAGE_RANGE) por varios segundos seguidos, cierra la
-    // distancia de golpe hasta la de ataque y dispara el jumpscare -- asi
-    // "guarda distancia" normalmente pero igual te puede alcanzar si lo
-    // ignoras del todo. Despues de atacar, se retira a su posicion
-    // original y espera un rato antes de volver a acercarse -- asi el
-    // efecto de persecucion se repite en vez de terminar una sola vez.
-    static const float ZOMBIE_LUNGE_ENGAGE_RANGE = 9.0f;
-    static const float ZOMBIE_LUNGE_THRESHOLD = 1.6f;     // bajado de 4.0: embiste mucho mas seguido
     static const float ZOMBIE_RETREAT_GRACE_DURATION = 5.0f;
     // Distancia que retrocede tras un susto -- no vuelve a su spawn
     // original (puede estar lejos), solo se aleja lo suficiente para
     // no quedar encimado, y puede volver a acercarse antes.
     static const float ZOMBIE_RETREAT_DISTANCE = 5.5f;
-    static float g_pursuerLungeTimer = 0.0f;
-    static float g_pursuerRetreatUntil = -1000.0f;
+
+    // Estado por zombie (ahora los 4 pueden perseguir a la vez, no solo
+    // "el mas cercano" -- mucho mas amenazante).
+    static std::vector<bool> g_zombieWasLooking;
+    static std::vector<float> g_zombieRetreatUntil;
+    static std::vector<bool> g_zombieActivelyMoving;
 
     // Aviso de cercania: suena UNA vez cada vez que cruza de "lejos" a
     // "cerca" (no en bucle), distinto del jumpscare que es al tocarte.
     static const float ZOMBIE_WARNING_RANGE = 5.5f;
-    static bool g_pursuerWasNear = false;
+    static std::vector<bool> g_zombieWasNear;
 
     // ---------------------------------------------------------
     // Configuración de escala / jugador
@@ -445,23 +444,18 @@ namespace Warehouse {
     static std::vector<glm::vec2> g_zombieCurrentXZ;
     static std::vector<float> g_zombieMoveYaw;
 
-    // Perseguidor FIJO: una vez elegido, sigue siendo el mismo zombie el
-    // que te persigue durante todo el cruce de la sala (no se recalcula
-    // "el mas cercano" cada frame, porque eso repartia el avance entre
-    // los 4 y ninguno llegaba a ningun lado). -1 = todavia no elegido.
-    static int g_pursuerIndex = -1;
-    // true el frame en que el perseguidor realmente se movio hacia el
-    // jugador -- se usa para suavizar el temblor/vaiven visual mientras
-    // camina (si no, el temblor pasivo se mezcla con la traslacion y se
-    // ve poco fluido).
-    static bool g_pursuerActivelyMoving = false;
+    // Ahora TODOS los zombies pueden perseguir a la vez (no solo "el mas
+    // cercano"), cada uno con su propio estado (ver g_zombieWasLooking,
+    // g_zombieRetreatUntil, g_zombieActivelyMoving, g_zombieWasNear mas
+    // arriba).
+    //
     // Aviso sonoro FRECUENTE mientras persigue activamente (distinto del
     // ping ambiental ocasional, que sigue existiendo para cuando no hay
-    // persecucion activa).
+    // persecucion activa). Compartido entre los 4 para no saturar de sonido.
     static float g_nextChaseSoundTime = -1.0f;
-    // Estado para detectar la transicion mirando -> no mirando (le diste
-    // la espalda) y disparar una senal pronunciada justo en ese instante.
-    static bool g_pursuerWasLooking = false;
+    // Pulso visual compartido: se dispara cuando CUALQUIERA de los
+    // zombies pasa de "te esta mirando" a "no te mira, arranca a
+    // perseguir" (le diste la espalda).
     static float g_pursuerNoticeFlashTime = -1000.0f;
     static const float PURSUER_NOTICE_FLASH_DURATION = 0.35f;
 
@@ -909,14 +903,12 @@ namespace Warehouse {
         g_zombieGazeTimer.clear();
         g_zombieCurrentXZ.clear();
         g_zombieMoveYaw.clear();
-        g_pursuerIndex = -1;
+        g_zombieWasLooking.clear();
+        g_zombieRetreatUntil.clear();
+        g_zombieActivelyMoving.clear();
+        g_zombieWasNear.clear();
         g_nextPresenceSoundTime = -1.0f;
-        g_pursuerLungeTimer = 0.0f;
-        g_pursuerRetreatUntil = -1000.0f;
-        g_pursuerWasNear = false;
-        g_pursuerActivelyMoving = false;
         g_nextChaseSoundTime = -1.0f;
-        g_pursuerWasLooking = false;
         g_pursuerNoticeFlashTime = -1000.0f;
         exitPhase = EXIT_NONE;
         exitTimer = 0.0f;
@@ -1548,7 +1540,11 @@ namespace Warehouse {
             if (g_jumpscareActive && currentFrame >= g_jumpscareActiveEndTime)
                 g_jumpscareActive = false;
 
-            glClearColor(0.05f, 0.05f, 0.05f, 1.0f);
+            // Mismo color que FOG_COLOR: asi cualquier "vacio" donde no
+            // hay geometria (mirando afuera por una abertura, mas alla de
+            // donde termina el modelo) se funde con la niebla en vez de
+            // mostrar un parche gris que se nota a la distancia.
+            glClearColor(FOG_COLOR.x, FOG_COLOR.y, FOG_COLOR.z, 1.0f);
             glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
             ourShader.use();
@@ -1748,14 +1744,15 @@ namespace Warehouse {
             ourShader.setFloat("contrastPower", CONTRAST_POWER);
             ourShader.setFloat("grainAmount", GRAIN_AMOUNT);
 
-            // Dread continuo: 0 si no hay perseguidor activo o esta lejos,
-            // sube cuanto mas cerca este (usa el mismo radio que el aviso
-            // de cercania para que quede coherente con el resto).
+            // Dread continuo: 0 si no hay ninguno cerca, sube cuanto mas
+            // cerca este CUALQUIERA de los 4 (usa el mismo radio que el
+            // aviso de cercania para que quede coherente con el resto).
             float dread = 0.0f;
-            if (g_pursuerIndex >= 0 && g_pursuerIndex < (int)g_zombieCurrentXZ.size())
+            for (size_t k = 0; k < g_zombieCurrentXZ.size(); k++)
             {
-                float d = glm::length(glm::vec2(camera.Position.x, camera.Position.z) - g_zombieCurrentXZ[g_pursuerIndex]);
-                dread = glm::clamp(1.0f - d / (ZOMBIE_WARNING_RANGE * 2.0f), 0.0f, 1.0f);
+                float d = glm::length(glm::vec2(camera.Position.x, camera.Position.z) - g_zombieCurrentXZ[k]);
+                float thisDread = glm::clamp(1.0f - d / (ZOMBIE_WARNING_RANGE * 2.0f), 0.0f, 1.0f);
+                dread = (std::max)(dread, thisDread);
             }
             ourShader.setFloat("dread", dread);
 
@@ -1799,6 +1796,14 @@ namespace Warehouse {
                     g_zombieMoveYaw[k] = repeatedInstances[k].yawDeg;
                 }
             }
+            if (g_zombieWasLooking.size() != repeatedInstances.size())
+                g_zombieWasLooking.assign(repeatedInstances.size(), false);
+            if (g_zombieRetreatUntil.size() != repeatedInstances.size())
+                g_zombieRetreatUntil.assign(repeatedInstances.size(), -1000.0f);
+            if (g_zombieActivelyMoving.size() != repeatedInstances.size())
+                g_zombieActivelyMoving.assign(repeatedInstances.size(), false);
+            if (g_zombieWasNear.size() != repeatedInstances.size())
+                g_zombieWasNear.assign(repeatedInstances.size(), false);
 
             // "Paso del arbol": referencia compartida por la persecucion Y
             // por el jumpscare de mirada sostenida (que solo debe aplicar
@@ -1820,32 +1825,17 @@ namespace Warehouse {
             const float TREE_PASS_MARGIN = 1.5f; // hay que quedar claramente mas alla, no justo al lado
             bool passedTree = playerProgress > treeProgress + TREE_PASS_MARGIN;
 
-            // -------- Persecucion "no me mires": solo el mas cercano, solo tras pasar el arbol --------
-            if (ZOMBIE_APPROACH_ENABLED && !repeatedInstances.empty())
+            // -------- Persecucion "no me mires": LOS 4 ZOMBIES A LA VEZ, solo tras pasar el arbol --------
+            bool anyPursuerActive = false;
+            if (ZOMBIE_APPROACH_ENABLED && passedTree)
             {
-                if (passedTree)
+                for (size_t idx = 0; idx < repeatedInstances.size(); idx++)
                 {
-                    // Se elige el perseguidor UNA sola vez (el mas cercano en
-                    // ese instante) y se mantiene el mismo de ahi en adelante
-                    // -- asi el avance no se reparte entre los 4 y se siente
-                    // como que ALGUIEN especifico te viene siguiendo.
-                    if (g_pursuerIndex < 0 || g_pursuerIndex >= (int)repeatedInstances.size())
-                    {
-                        size_t nearestIdx = 0;
-                        float nearestDist = FLT_MAX;
-                        for (size_t k = 0; k < repeatedInstances.size(); k++)
-                        {
-                            float d = glm::length(glm::vec2(camera.Position.x, camera.Position.z) - g_zombieCurrentXZ[k]);
-                            if (d < nearestDist) { nearestDist = d; nearestIdx = k; }
-                        }
-                        g_pursuerIndex = (int)nearestIdx;
-                        std::cout << "[DEBUG] Zombie " << g_pursuerIndex << " elegido como perseguidor fijo." << std::endl;
-                    }
-                    size_t nearestIdx = (size_t)g_pursuerIndex;
+                    anyPursuerActive = true;
 
-                    bool inGracePeriod = currentFrame < g_pursuerRetreatUntil;
+                    bool inGracePeriod = currentFrame < g_zombieRetreatUntil[idx];
 
-                    glm::vec3 approachPos3D(g_zombieCurrentXZ[nearestIdx].x, g_worldAABB.min.y + 0.1f, g_zombieCurrentXZ[nearestIdx].y);
+                    glm::vec3 approachPos3D(g_zombieCurrentXZ[idx].x, g_worldAABB.min.y + 0.1f, g_zombieCurrentXZ[idx].y);
                     glm::vec3 toZ = approachPos3D - camera.Position;
                     float distToZ = glm::length(toZ);
                     bool looking = false;
@@ -1856,59 +1846,56 @@ namespace Warehouse {
                         looking = cosAngle > cosf(glm::radians(ZOMBIE_APPROACH_LOOK_ANGLE_DEG));
                     }
 
-                    g_pursuerActivelyMoving = false;
+                    g_zombieActivelyMoving[idx] = false;
 
                     // Señal PRONUNCIADA justo en el instante en que dejas de
-                    // mirarlo (te das la vuelta) y arranca a perseguirte --
-                    // antes esto pasaba en silencio y no se notaba. Sonido
-                    // inmediato + un latido de viñeta fuerte y breve.
-                    if (!inGracePeriod && g_pursuerWasLooking && !looking)
+                    // mirar a ESTE zombie (te das la vuelta) y arranca a
+                    // perseguirte. Sonido inmediato + latido de viñeta.
+                    if (!inGracePeriod && g_zombieWasLooking[idx] && !looking)
                     {
                         playPreloaded("presence");
                         g_pursuerNoticeFlashTime = currentFrame;
                         g_nextChaseSoundTime = currentFrame + 0.4f; // que no se pise con el aviso frecuente
-                        std::cout << "[DEBUG] Zombie " << nearestIdx << " empieza a seguirte (le diste la espalda)." << std::endl;
+                        std::cout << "[DEBUG] Zombie " << idx << " empieza a seguirte (le diste la espalda)." << std::endl;
                     }
-                    g_pursuerWasLooking = looking;
+                    g_zombieWasLooking[idx] = looking;
 
                     if (!inGracePeriod && !looking)
                     {
-                        // Se acerca hasta guardar cierta distancia (ya no se
-                        // pega a la camara como antes).
-                        glm::vec2 toPlayerXZ = glm::vec2(camera.Position.x, camera.Position.z) - g_zombieCurrentXZ[nearestIdx];
+                        glm::vec2 toPlayerXZ = glm::vec2(camera.Position.x, camera.Position.z) - g_zombieCurrentXZ[idx];
                         float distXZ = glm::length(toPlayerXZ);
+
                         if (distXZ > ZOMBIE_APPROACH_STOP_DISTANCE)
                         {
-                            g_pursuerActivelyMoving = true;
+                            g_zombieActivelyMoving[idx] = true;
 
                             glm::vec2 dir = toPlayerXZ / distXZ;
                             glm::vec2 step = dir * ZOMBIE_APPROACH_SPEED * deltaTime;
 
-                            glm::vec3 testX(g_zombieCurrentXZ[nearestIdx].x + step.x, g_worldAABB.min.y + 0.1f, g_zombieCurrentXZ[nearestIdx].y);
+                            glm::vec3 testX(g_zombieCurrentXZ[idx].x + step.x, g_worldAABB.min.y + 0.1f, g_zombieCurrentXZ[idx].y);
                             if (!CollidesAt(testX, repeatedFootprintRadius) && HasFloorAt(testX))
-                                g_zombieCurrentXZ[nearestIdx].x += step.x;
+                                g_zombieCurrentXZ[idx].x += step.x;
 
-                            glm::vec3 testZ(g_zombieCurrentXZ[nearestIdx].x, g_worldAABB.min.y + 0.1f, g_zombieCurrentXZ[nearestIdx].y + step.y);
+                            glm::vec3 testZ(g_zombieCurrentXZ[idx].x, g_worldAABB.min.y + 0.1f, g_zombieCurrentXZ[idx].y + step.y);
                             if (!CollidesAt(testZ, repeatedFootprintRadius) && HasFloorAt(testZ))
-                                g_zombieCurrentXZ[nearestIdx].y += step.y;
+                                g_zombieCurrentXZ[idx].y += step.y;
 
-                            g_zombieMoveYaw[nearestIdx] = glm::degrees(atan2f(dir.x, dir.y));
+                            g_zombieMoveYaw[idx] = glm::degrees(atan2f(dir.x, dir.y));
 
                             // Limite de "territorio": si el paso lo saco mas
-                            // alla de su rango maximo desde su spawn original,
+                            // alla de su rango maximo desde SU spawn original,
                             // lo dejamos justo en el borde -- se queda ahi
                             // quieto en vez de perseguir por todo el warehouse.
-                            glm::vec2 pursuerSpawnXZ(repeatedInstances[nearestIdx].worldPos.x, repeatedInstances[nearestIdx].worldPos.z);
-                            float distFromSpawn = glm::length(g_zombieCurrentXZ[nearestIdx] - pursuerSpawnXZ);
+                            glm::vec2 zombieSpawnXZ(repeatedInstances[idx].worldPos.x, repeatedInstances[idx].worldPos.z);
+                            float distFromSpawn = glm::length(g_zombieCurrentXZ[idx] - zombieSpawnXZ);
                             if (distFromSpawn > ZOMBIE_APPROACH_MAX_RANGE)
                             {
-                                glm::vec2 dirFromSpawn = (g_zombieCurrentXZ[nearestIdx] - pursuerSpawnXZ) / distFromSpawn;
-                                g_zombieCurrentXZ[nearestIdx] = pursuerSpawnXZ + dirFromSpawn * ZOMBIE_APPROACH_MAX_RANGE;
+                                glm::vec2 dirFromSpawn = (g_zombieCurrentXZ[idx] - zombieSpawnXZ) / distFromSpawn;
+                                g_zombieCurrentXZ[idx] = zombieSpawnXZ + dirFromSpawn * ZOMBIE_APPROACH_MAX_RANGE;
                             }
 
-                            // Aviso FRECUENTE mientras persigue de verdad (no
-                            // el ping ambiental ocasional) -- esto es lo que
-                            // te tiene que denotar que hay algo atras.
+                            // Aviso FRECUENTE mientras cualquiera persigue de
+                            // verdad (compartido entre los 4, no se cuadriplica).
                             if (g_nextChaseSoundTime < 0.0f)
                                 g_nextChaseSoundTime = currentFrame + PseudoRandomRange(1.0f, 3.0f, 5.5f);
                             if (currentFrame >= g_nextChaseSoundTime)
@@ -1921,51 +1908,33 @@ namespace Warehouse {
                         // Aviso de cercania: suena UNA vez al cruzar de lejos
                         // a cerca (no se repite mientras se mantiene cerca).
                         bool isNearNow = distXZ < ZOMBIE_WARNING_RANGE;
-                        if (isNearNow && !g_pursuerWasNear)
+                        if (isNearNow && !g_zombieWasNear[idx])
                             playPreloaded("presence");
-                        g_pursuerWasNear = isNearNow;
+                        g_zombieWasNear[idx] = isNearNow;
 
-                        // Embestida: si te quedas sin mirarlo mientras esta
-                        // relativamente cerca por varios segundos seguidos,
-                        // cierra la distancia de golpe y ataca.
-                        if (distXZ < ZOMBIE_LUNGE_ENGAGE_RANGE)
-                            g_pursuerLungeTimer += deltaTime;
-                        else
-                            g_pursuerLungeTimer = (std::max)(0.0f, g_pursuerLungeTimer - deltaTime);
-
-                        bool lunging = g_pursuerLungeTimer >= ZOMBIE_LUNGE_THRESHOLD;
+                        // SOLO contacto real dispara el jumpscare -- sin
+                        // embestida/teletransporte. Tiene que CAMINAR hasta
+                        // vos de verdad.
                         bool directContact = distXZ < ZOMBIE_APPROACH_ATTACK_DISTANCE;
 
-                        if ((lunging || directContact) &&
-                            currentFrame >= g_jumpscareCooldownUntil && !g_jumpscareActive)
+                        if (directContact && currentFrame >= g_jumpscareCooldownUntil && !g_jumpscareActive)
                         {
-                            if (lunging)
-                            {
-                                // Cierra el resto de la distancia de un salto
-                                // (validando que no quede metido en una pared).
-                                glm::vec2 lungeDir = (distXZ > 0.001f) ? (toPlayerXZ / distXZ) : glm::vec2(1.0f, 0.0f);
-                                glm::vec2 lungeTarget = glm::vec2(camera.Position.x, camera.Position.z) - lungeDir * (ZOMBIE_APPROACH_ATTACK_DISTANCE * 0.8f);
-                                glm::vec3 lungeTest(lungeTarget.x, g_worldAABB.min.y + 0.1f, lungeTarget.y);
-                                if (!CollidesAt(lungeTest, repeatedFootprintRadius) && HasFloorAt(lungeTest))
-                                    g_zombieCurrentXZ[nearestIdx] = lungeTarget;
-                            }
-
                             g_jumpscareTriggerTime = currentFrame;
                             g_jumpscareActive = true;
                             g_jumpscareActiveEndTime = currentFrame + JUMPSCARE_EFFECT_DURATION;
                             g_jumpscareCooldownUntil = currentFrame + JUMPSCARE_COOLDOWN;
                             g_startleTriggerTime = currentFrame;
                             playPreloaded("scream");
-                            std::cout << "[DEBUG] *** JUMPSCARE *** Zombie " << nearestIdx << " te alcanzo." << std::endl;
+                            std::cout << "[DEBUG] *** JUMPSCARE *** Zombie " << idx << " te alcanzo." << std::endl;
 
                             // Retirada: se aleja una distancia fija (no vuelve
                             // hasta su spawn original, que puede estar lejos)
                             // y espera antes de volver a acercarse. Se valida
                             // que el punto de retirada no quede metido en una
-                            // pared/columna; si falla, se prueban un par de
-                            // angulos alternativos antes de darse por vencido.
+                            // pared/columna; si falla, se prueban angulos
+                            // alternativos antes de darse por vencido.
                             {
-                                glm::vec2 currentPos = g_zombieCurrentXZ[nearestIdx];
+                                glm::vec2 currentPos = g_zombieCurrentXZ[idx];
                                 glm::vec2 awayDir = (distXZ > 0.001f) ? -(toPlayerXZ / distXZ) : glm::vec2(1.0f, 0.0f);
                                 bool placed = false;
                                 for (int attempt = 0; attempt < 5 && !placed; attempt++)
@@ -1979,34 +1948,22 @@ namespace Warehouse {
                                     glm::vec3 retreatTest(retreatTarget.x, g_worldAABB.min.y + 0.1f, retreatTarget.y);
                                     if (!CollidesAt(retreatTest, repeatedFootprintRadius) && HasFloorAt(retreatTest))
                                     {
-                                        g_zombieCurrentXZ[nearestIdx] = retreatTarget;
+                                        g_zombieCurrentXZ[idx] = retreatTarget;
                                         placed = true;
                                     }
                                 }
                             }
-                            // Se resetea el indice de perseguidor: la PROXIMA
-                            // vez se re-evalua cual es el mas cercano (puede
-                            // ser el mismo u otro distinto).
-                            g_pursuerRetreatUntil = currentFrame + ZOMBIE_RETREAT_GRACE_DURATION;
-                            g_pursuerLungeTimer = 0.0f;
-                            g_pursuerWasNear = false;
-                            g_pursuerIndex = -1;
-                            std::cout << "[DEBUG] Zombie " << nearestIdx << " se retira, vuelve a acercarse en " << ZOMBIE_RETREAT_GRACE_DURATION << "s." << std::endl;
+                            g_zombieRetreatUntil[idx] = currentFrame + ZOMBIE_RETREAT_GRACE_DURATION;
+                            g_zombieWasNear[idx] = false;
+                            std::cout << "[DEBUG] Zombie " << idx << " se retira, vuelve a acercarse en " << ZOMBIE_RETREAT_GRACE_DURATION << "s." << std::endl;
                         }
-                    }
-                    else if (looking)
-                    {
-                        // Si lo estas mirando, se congela Y se calma (pierde
-                        // urgencia de embestir) mas rapido que si solo te
-                        // alejaras sin mirarlo.
-                        g_pursuerLungeTimer = (std::max)(0.0f, g_pursuerLungeTimer - deltaTime * 2.0f);
                     }
                 }
             }
 
             // Sonido de "alguien te sigue": suena de vez en cuando SOLO
-            // mientras hay un perseguidor activo, en un intervalo aleatorio.
-            if (g_pursuerIndex >= 0)
+            // mientras hay persecucion activa, en un intervalo aleatorio.
+            if (anyPursuerActive)
             {
                 if (g_nextPresenceSoundTime < 0.0f)
                     g_nextPresenceSoundTime = currentFrame + PseudoRandomRange(1.0f, PRESENCE_SOUND_MIN_INTERVAL, PRESENCE_SOUND_MAX_INTERVAL);
@@ -2064,7 +2021,7 @@ namespace Warehouse {
                     // hacia el jugador, se amortigua el temblor/vaiven pasivo
                     // -- si no, se mezclan y la caminata se ve poco fluida
                     // (como deslizandose en vez de avanzar derecho).
-                    bool isMovingPursuer = ((int)i == g_pursuerIndex) && g_pursuerActivelyMoving;
+                    bool isMovingPursuer = ((int)i < (int)g_zombieActivelyMoving.size()) && g_zombieActivelyMoving[i];
                     float motionDamp = isMovingPursuer ? 0.2f : 1.0f;
 
                     float twitchStep = floorf(currentFrame / ZOMBIE_TWITCH_STEP_DURATION + (float)i * 7.0f);
