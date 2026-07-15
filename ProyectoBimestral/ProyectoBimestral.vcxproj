@@ -114,15 +114,13 @@
       <PreprocessorDefinitions>_DEBUG;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
       <LanguageStandard>stdcpp20</LanguageStandard>
-      <AdditionalIncludeDirectories>C:\VisualCode22\ProyectoBimestral\ProyectoBimestral_Stuff\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(SolutionDir)include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>
       <GenerateDebugInformation>true</GenerateDebugInformation>
       <AdditionalLibraryDirectories>$(SolutionDir)ProyectoBimestral_Stuff\Library;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
-      <AdditionalDependencies>opengl32.lib;glfw3.lib;assimp-vc145-mtd.lib;sfml-audio.lib
-
-;sfml-system.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>opengl32.lib;glfw3.lib;assimp-vc145-mtd.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
     <Manifest>
       <EnableSegmentHeap>true</EnableSegmentHeap>
@@ -148,21 +146,26 @@
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClCompile Include="glad.c" />
+    <ClCompile Include="Scene_Samy.cpp" />
     <ClCompile Include="Scene_Anahi.cpp" />
+    <ClCompile Include="Scene_Josue.cpp" />
+    <ClCompile Include="main_warehouse.cpp" />
+    <ClCompile Include="Scene_Pasillo.cpp" />
+    <ClCompile Include="Source.cpp" />
   </ItemGroup>
   <ItemGroup>
-    <None Include="shaders\box.fs" />
-    <None Include="shaders\box.vs" />
-    <None Include="shaders\Fragment_Anahi.fs" />
-    <None Include="shaders\text.fs" />
-    <None Include="shaders\text.vs" />
-    <None Include="shaders\Vertex_Anahi.vs" />
+    <None Include="shaders\Fragment_Samy.fs" />
+    <None Include="shaders\jumpscare.fs" />
+    <None Include="shaders\light_billboard.fs" />
+    <None Include="shaders\light_billboard.vs" />
+    <None Include="shaders\model_loading.fs" />
+    <None Include="shaders\model_loading.vs" />
+    <None Include="shaders\text_samy.fs" />
+    <None Include="shaders\text_samy.vs" />
+    <None Include="shaders\Vertex_Samy.vs" />
   </ItemGroup>
   <ItemGroup>
-    <Media Include="audios\miedo.mp3" />
-  </ItemGroup>
-  <ItemGroup>
-    <Font Include="fonts\Bevan-Regular.ttf" />
+    <Text Include="shaders\jumpscare.vs" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

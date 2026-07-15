@@ -1,0 +1,353 @@
+# Blender 5.1.2 MTL File: 'None'
+# www.blender.org
+
+newmtl DM_Watch_Your_Step_graffiti
+Ns 0.000000
+Ka 1.000000 1.000000 1.000000
+Ks 0.500000 0.500000 0.500000
+Ke 0.000000 0.000000 0.000000
+Ni 1000.000000
+d 1.000000
+illum 2
+map_Kd DM_Watch_Your_Step_graffiti_diffuse.png
+
+newmtl Material.001
+Ns 0.000000
+Ka 1.000000 1.000000 1.000000
+Kd 0.007499 0.005182 0.004777
+Ks 0.500000 0.500000 0.500000
+Ke 0.000000 0.000000 0.000000
+Ni 1000.000000
+d 1.000000
+illum 2
+
+newmtl TexturesCom_CardboardPlain0019_2_alphamasked_S
+Ns 0.000000
+Ka 1.000000 1.000000 1.000000
+Ks 0.500000 0.500000 0.500000
+Ke 0.000000 0.000000 0.000000
+Ni 1000.000000
+illum 2
+map_Kd TexturesCom_CardboardPlain0019_2_alphamasked_S_diffuse.png
+map_d TexturesCom_CardboardPlain0019_2_alphamasked_S_diffuse.png
+
+newmtl TexturesCom_CardboardPlain0022_2_alphamasked_S
+Ns 0.000000
+Ka 1.000000 1.000000 1.000000
+Ks 0.500000 0.500000 0.500000
+Ke 0.000000 0.000000 0.000000
+Ni 1000.000000
+illum 2
+map_Kd TexturesCom_CardboardPlain0022_2_alphamasked_S_diffuse.png
+map_d TexturesCom_CardboardPlain0022_2_alphamasked_S_diffuse.png
+
+newmtl TexturesCom_CardboardPlain0026_2_alphamasked_S
+Ns 0.000000
+Ka 1.000000 1.000000 1.000000
+Ks 0.500000 0.500000 0.500000
+Ke 0.000000 0.000000 0.000000
+Ni 1000.000000
+illum 2
+map_Kd TexturesCom_CardboardPlain0026_2_alphamasked_S_diffuse.png
+map_d TexturesCom_CardboardPlain0026_2_alphamasked_S_diffuse.png
+
+newmtl TexturesCom_DoorsRollup0044_M
+Ns 0.000000
+Ka 1.000000 1.000000 1.000000
+Ks 0.500000 0.500000 0.500000
+Ke 0.000000 0.000000 0.000000
+Ni 1000.000000
+d 1.000000
+illum 2
+map_Kd TexturesCom_DoorsRollup0044_M_diffuse.png
+
+newmtl TexturesCom_DoorsWoodBarn0017_M
+Ns 0.000000
+Ka 1.000000 1.000000 1.000000
+Ks 0.500000 0.500000 0.500000
+Ke 0.000000 0.000000 0.000000
+Ni 1000.000000
+d 1.000000
+illum 2
+map_Kd TexturesCom_DoorsWoodBarn0017_M_diffuse.png
+
+newmtl briques-ss-fenetre
+Ns 0.000000
+Ka 1.000000 1.000000 1.000000
+Ks 0.500000 0.500000 0.500000
+Ke 0.000000 0.000000 0.000000
+Ni 1000.000000
+d 1.000000
+illum 2
+map_Kd briques-ss-fenetre_diffuse.png
+
+newmtl briques-sur-fenetre
+Ns 0.000000
+Ka 1.000000 1.000000 1.000000
+Ks 0.500000 0.500000 0.500000
+Ke 0.000000 0.000000 0.000000
+Ni 1000.000000
+d 1.000000
+illum 2
+map_Kd briques-sur-fenetre_diffuse.png
+map_Bump -bm 0.100000 briques-sur-fenetre_diffuse.png
+
+newmtl cable
+Ns 90.000000
+Ka 1.000000 1.000000 1.000000
+Kd 0.007499 0.005182 0.004777
+Ks 0.500000 0.500000 0.500000
+Ke 0.000000 0.000000 0.000000
+Ni 1000.000000
+d 1.000000
+illum 2
+
+newmtl cable.001
+Ns 90.000000
+Ka 1.000000 1.000000 1.000000
+Kd 0.007499 0.005182 0.004777
+Ks 0.500000 0.500000 0.500000
+Ke 0.000000 0.000000 0.000000
+Ni 1000.000000
+d 1.000000
+illum 2
+
+newmtl chaise
+Ns 16.900000
+Ka 1.000000 1.000000 1.000000
+Kd 0.003438 0.003406 0.003406
+Ks 0.500000 0.500000 0.500000
+Ke 0.000000 0.000000 0.000000
+Ni 1000.000000
+d 1.000000
+illum 2
+
+newmtl colonne-beton
+Ns 0.000000
+Ka 1.000000 1.000000 1.000000
+Ks 0.500000 0.500000 0.500000
+Ke 0.000000 0.000000 0.000000
+Ni 1000.000000
+d 1.000000
+illum 2
+map_Kd colonne-beton_diffuse.png
+
+newmtl colonne-beton.001
+Ns 0.000000
+Ka 1.000000 1.000000 1.000000
+Ks 0.500000 0.500000 0.500000
+Ke 0.000000 0.000000 0.000000
+Ni 1000.000000
+d 1.000000
+illum 2
+map_Kd colonne-beton.001_diffuse.png
+
+newmtl fenetre.002
+Ka 1.000000 1.000000 1.000000
+Ks 0.500000 0.500000 0.500000
+Ke 0.000000 0.000000 0.000000
+Ni 1000.000000
+d 1.000000
+illum 2
+map_Kd fenetre.002_diffuse.jpeg
+map_Ns fenetre.002_specularGlossiness.png
+
+newmtl fenetre.004
+Ka 1.000000 1.000000 1.000000
+Ks 0.500000 0.500000 0.500000
+Ke 0.000000 0.000000 0.000000
+Ni 1000.000000
+d 1.000000
+illum 2
+map_Kd fenetre.004_diffuse.jpeg
+map_Ns fenetre.004_specularGlossiness.png
+
+newmtl fenetre.005
+Ka 1.000000 1.000000 1.000000
+Ks 0.500000 0.500000 0.500000
+Ke 0.000000 0.000000 0.000000
+Ni 1000.000000
+d 1.000000
+illum 2
+map_Kd fenetre.005_diffuse.jpeg
+map_Ns fenetre.005_specularGlossiness.png
+
+newmtl fenetre.006
+Ka 1.000000 1.000000 1.000000
+Ks 0.500000 0.500000 0.500000
+Ke 0.000000 0.000000 0.000000
+Ni 1000.000000
+d 1.000000
+illum 2
+map_Kd fenetre.006_diffuse.jpeg
+map_Ns fenetre.006_specularGlossiness.png
+
+newmtl gravas
+Ka 1.000000 1.000000 1.000000
+Kd 0.800000 0.800000 0.800000
+Ks 0.500000 0.500000 0.500000
+Ke 0.000000 0.000000 0.000000
+Ni 1000.000000
+d 1.000000
+illum 2
+map_Ns gravas_specularGlossiness.png
+
+newmtl lampe
+Ns 260.100006
+Ka 1.000000 1.000000 1.000000
+Kd 0.002055 0.001593 0.001500
+Ks 0.500000 0.500000 0.500000
+Ke 0.000000 0.000000 0.000000
+Ni 1000.000000
+d 1.000000
+illum 2
+
+newmtl lampe-interieure
+Ns 72.899986
+Ka 1.000000 1.000000 1.000000
+Kd 0.421978 0.409645 0.409645
+Ks 0.500000 0.500000 0.500000
+Ke 0.000000 0.000000 0.000000
+Ni 1000.000000
+d 1.000000
+illum 2
+
+newmtl material
+Ns 0.000000
+Ka 1.000000 1.000000 1.000000
+Ks 0.500000 0.500000 0.500000
+Ni 1000.000000
+d 1.000000
+illum 2
+map_Kd material_diffuse.png
+map_Ke material_diffuse.png
+
+newmtl mur-arriere
+Ns 0.000000
+Ka 1.000000 1.000000 1.000000
+Ks 0.500000 0.500000 0.500000
+Ke 0.000000 0.000000 0.000000
+Ni 1000.000000
+d 1.000000
+illum 2
+map_Kd mur-arriere_diffuse.png
+
+newmtl mur-droite
+Ns 0.000000
+Ka 1.000000 1.000000 1.000000
+Ks 0.500000 0.500000 0.500000
+Ke 0.000000 0.000000 0.000000
+Ni 1000.000000
+d 1.000000
+illum 2
+map_Kd mur-droite_diffuse.png
+
+newmtl mur-fond
+Ns 0.000000
+Ka 1.000000 1.000000 1.000000
+Ks 0.500000 0.500000 0.500000
+Ke 0.000000 0.000000 0.000000
+Ni 1000.000000
+d 1.000000
+illum 2
+map_Kd mur-fond_diffuse.png
+
+newmtl mur-gauche
+Ns 0.000000
+Ka 1.000000 1.000000 1.000000
+Ks 0.500000 0.500000 0.500000
+Ke 0.000000 0.000000 0.000000
+Ni 1000.000000
+d 1.000000
+illum 2
+map_Kd mur-gauche_diffuse.png
+
+newmtl palette
+Ns 0.000000
+Ka 1.000000 1.000000 1.000000
+Ks 0.500000 0.500000 0.500000
+Ke 0.000000 0.000000 0.000000
+Ni 1000.000000
+d 1.000000
+illum 2
+map_Kd palette_diffuse.png
+
+newmtl palette.001
+Ns 0.000000
+Ka 1.000000 1.000000 1.000000
+Ks 0.500000 0.500000 0.500000
+Ke 0.000000 0.000000 0.000000
+Ni 1000.000000
+d 1.000000
+illum 2
+map_Kd palette.001_diffuse.png
+
+newmtl pandagun_1280
+Ns 0.000000
+Ka 1.000000 1.000000 1.000000
+Ks 0.500000 0.500000 0.500000
+Ke 0.000000 0.000000 0.000000
+Ni 1000.000000
+d 1.000000
+illum 2
+map_Kd pandagun_1280_diffuse.png
+
+newmtl poutre-toit.000
+Ns 0.000000
+Ka 1.000000 1.000000 1.000000
+Kd 0.007499 0.005182 0.004777
+Ks 0.500000 0.500000 0.500000
+Ke 0.000000 0.000000 0.000000
+Ni 1000.000000
+d 1.000000
+illum 2
+
+newmtl poutre-toit.001
+Ns 0.000000
+Ka 1.000000 1.000000 1.000000
+Ks 0.500000 0.500000 0.500000
+Ke 0.000000 0.000000 0.000000
+Ni 1000.000000
+d 1.000000
+illum 2
+map_Kd poutre-toit.001_diffuse.png
+
+newmtl poutre-toit.002
+Ns 0.000000
+Ka 1.000000 1.000000 1.000000
+Kd 0.007499 0.005182 0.004777
+Ks 0.500000 0.500000 0.500000
+Ke 0.000000 0.000000 0.000000
+Ni 1000.000000
+d 1.000000
+illum 2
+
+newmtl poutre-toit.003
+Ns 0.000000
+Ka 1.000000 1.000000 1.000000
+Kd 0.007726 0.005566 0.004885
+Ks 0.500000 0.500000 0.500000
+Ke 0.000000 0.000000 0.000000
+Ni 1000.000000
+d 1.000000
+illum 2
+
+newmtl toiture-tole
+Ns 0.000000
+Ka 1.000000 1.000000 1.000000
+Ks 0.500000 0.500000 0.500000
+Ke 0.000000 0.000000 0.000000
+Ni 1000.000000
+d 1.000000
+illum 2
+map_Kd toiture-tole_diffuse.png
+
+newmtl toiture-tole.001
+Ns 0.000000
+Ka 1.000000 1.000000 1.000000
+Ks 0.500000 0.500000 0.500000
+Ke 0.000000 0.000000 0.000000
+Ni 1000.000000
+d 1.000000
+illum 2
+map_Kd toiture-tole.001_diffuse.png

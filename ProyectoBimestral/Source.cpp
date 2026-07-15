@@ -1,35 +1,81 @@
+#include <glad/glad.h>
 #include <GLFW/glfw3.h>
+#include <iostream>
 
-int main(void)
+#define STB_IMAGE_IMPLEMENTATION
+#include <learnopengl/stb_image.h>
+
+enum SceneType { SCENE_PASILLO, SCENE_SAMY, SCENE_ANI, SCENE_MATTHEW, SCENE_JOSUE };
+SceneType g_CurrentScene = SCENE_PASILLO;
+SceneType g_NextScene = SCENE_PASILLO;
+int g_UnlockedLevel = 1; // Nivel desbloqueado progresivamente (1 a 4)
+bool g_ReturnedFromJosue = false;
+
+namespace Pasillo { void RunScene(GLFWwindow* window); }
+namespace Samy { void RunScene(GLFWwindow* window); }
+namespace Anahi { void RunScene(GLFWwindow* window); }
+namespace Warehouse { void RunScene(GLFWwindow* window); }
+namespace Josue { void RunScene(GLFWwindow* window); }
+
+int main()
 {
-    GLFWwindow* window;
-
-    /* Initialize the library */
+    // Inicializar GLFW
     if (!glfwInit())
-        return -1;
-
-    /* Create a windowed mode window and its OpenGL context */
-    window = glfwCreateWindow(640, 480, "Hello World", NULL, NULL);
-    if (!window)
     {
-        glfwTerminate();
+        std::cout << "Error al inicializar GLFW" << std::endl;
         return -1;
     }
 
-    /* Make the window's context current */
+    glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
+    glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
+    glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
+
+#ifdef __APPLE__
+    glfwWindowHint(GLFW_OPENGL_FORWARD_COMPAT, GL_TRUE);
+#endif
+
+    // Crear la ventana principal de la simulación
+    GLFWwindow* window = glfwCreateWindow(1920, 1080, "El Pabellon 9 - Simulador de Recuerdos", NULL, NULL);
+    if (window == NULL)
+    {
+        std::cout << "Error al crear la ventana GLFW" << std::endl;
+        glfwTerminate();
+        return -1;
+    }
     glfwMakeContextCurrent(window);
 
-    /* Loop until the user closes the window */
+    // Inicializar GLAD
+    if (!gladLoadGLLoader((GLADloadproc)glfwGetProcAddress))
+    {
+        std::cout << "Error al inicializar GLAD" << std::endl;
+        return -1;
+    }
+
+    // Bucle enrutador principal
     while (!glfwWindowShouldClose(window))
     {
-        /* Render here */
-        glClear(GL_COLOR_BUFFER_BIT);
+        g_CurrentScene = g_NextScene;
 
-        /* Swap front and back buffers */
-        glfwSwapBuffers(window);
-
-        /* Poll for and process events */
-        glfwPollEvents();
+        if (g_CurrentScene == SCENE_PASILLO)
+        {
+            Pasillo::RunScene(window);
+        }
+        else if (g_CurrentScene == SCENE_SAMY)
+        {
+            Samy::RunScene(window);
+        }
+        else if (g_CurrentScene == SCENE_ANI)
+        {
+            Anahi::RunScene(window);
+        }
+        else if (g_CurrentScene == SCENE_MATTHEW)
+        {
+            Warehouse::RunScene(window);
+        }
+        else if (g_CurrentScene == SCENE_JOSUE)
+        {
+            Josue::RunScene(window);
+        }
     }
 
     glfwTerminate();

@@ -90,6 +90,7 @@ StyleCopReport.xml
 *.tmp_proj
 *_wpftmp.csproj
 *.log
+*.obj
 *.vspscc
 *.vssscc
 .builds
@@ -164,6 +165,10 @@ AutoTest.Net/
 
 # Installshield output folder
 [Ee]xpress/
+
+# Allow specific OBJ/MTL asset files under ProyectoBimestral/model/pasillo
+!ProyectoBimestral/model/pasillo/pasillo.obj
+!ProyectoBimestral/model/pasillo/pasillo.mtl
 
 # DocProject is a documentation generator add-in
 DocProject/buildhelp/
@@ -369,4 +374,54 @@ Release/
 *.aps
 *.VC.db
 *.VC.opendb
-/ProyectoBimestral/Scene_Anahi.cpp
+
+# =========================================================================
+# OpenGL & C++ Custom Assets / Dependencies Settings
+# =========================================================================
+
+# Formatos de modelos 3D y texturas pesadas (comunes en OpenGL)
+*.obj
+*.mtl
+*.fbx
+*.dae
+*.gltf
+*.glb
+*.png
+*.jpg
+*.tga
+
+# Ignorar todos los archivos ZIP de modelos
+ProyectoBimestral/model/**/*.zip
+
+# Excepciones para subir los assets de pasillo
+!ProyectoBimestral/model/pasillo/pasillo.obj
+!ProyectoBimestral/model/pasillo/pasillo.mtl
+
+# Excepciones para subir los assets de garage_ani
+!ProyectoBimestral/model/garage_ani/garage_ani.obj
+!ProyectoBimestral/model/garage_ani/garage_ani.mtl
+!ProyectoBimestral/model/garage_ani/Material_baseColor.png
+!ProyectoBimestral/model/garage_ani/Material_normal.png
+
+# Excepciones para subir los assets de Zombie_torso
+!ProyectoBimestral/model/Zombie_torso/zombie.obj
+!ProyectoBimestral/model/Zombie_torso/zombie.mtl
+
+# Excepciones para subir los assets de C_Tree
+!ProyectoBimestral/model/C_Tree/C_tree.obj
+!ProyectoBimestral/model/C_Tree/C_tree.mtl
+
+# Excepciones para subir los assets de la escena interior del Warehouse
+!ProyectoBimestral/model/Warehouse/abandoned_warehouse_-_interior_scene/interior_scene.obj
+!ProyectoBimestral/model/Warehouse/abandoned_warehouse_-_interior_scene/interior_scene.mtl
+!ProyectoBimestral/model/Warehouse/abandoned_warehouse_-_interior_scene/*.png
+!ProyectoBimestral/model/Warehouse/abandoned_warehouse_-_interior_scene/*.jpeg
+!ProyectoBimestral/model/Warehouse/abandoned_warehouse_-_interior_scene/textures/
+*.bmp
+
+# Excepciones: permitir todos los assets del proyecto (modelos, texturas, audio)
+!ProyectoBimestral/model/**
+!ProyectoBimestral/audios/**
+!ProyectoBimestral/music/**
+!ProyectoBimestral/shaders/**
+!ProyectoBimestral/fonts/**

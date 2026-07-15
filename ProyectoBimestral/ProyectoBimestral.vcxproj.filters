@@ -50,6 +50,12 @@
     <None Include="shaders\box.vs">
       <Filter>Archivos de origen\shaders</Filter>
     </None>
+    <None Include="shaders\text_samy.fs">
+      <Filter>Archivos de origen\shaders</Filter>
+    </None>
+    <None Include="shaders\text_samy.vs">
+      <Filter>Archivos de origen\shaders</Filter>
+    </None>
   </ItemGroup>
   <ItemGroup>
     <Media Include="audios\miedo.mp3">
