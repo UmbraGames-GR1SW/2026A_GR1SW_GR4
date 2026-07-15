@@ -1,52 +1,43 @@
-# Blender 5.1.0 MTL File: 'None'
+# Blender 5.1.2 MTL File: 'None'
 # www.blender.org
 
-newmtl Ground
-Ns 0.000000
+newmtl Material.001
+Ns 159.999985
 Ka 1.000000 1.000000 1.000000
 Ks 0.500000 0.500000 0.500000
-Ke 0.000000 0.000000 0.000000
 Ni 1.500000
 d 1.000000
 illum 2
-map_Kd Ground_baseColor.jpeg
+map_Kd Material_baseColor.png
+map_Ke Material_baseColor.png
+map_Bump -bm 1.000000 Material_normal.png
 
-newmtl Lights_D
-Ns 0.000000
+newmtl blue_light
+Ns 159.999985
 Ka 1.000000 1.000000 1.000000
+Kd 1.000000 1.000000 1.000000
 Ks 0.500000 0.500000 0.500000
-Ke 0.000000 0.000000 0.000000
 Ni 1.500000
 d 1.000000
 illum 2
-map_Kd Lights_D_baseColor.jpeg
+map_Ke Material_baseColor.png
 
-newmtl Pillars
-Ns 0.000000
+newmtl floor_light
+Ns 159.999985
 Ka 1.000000 1.000000 1.000000
+Kd 1.000000 1.000000 1.000000
 Ks 0.500000 0.500000 0.500000
-Ke 0.000000 0.000000 0.000000
 Ni 1.500000
 d 1.000000
 illum 2
-map_Kd Pillars_baseColor.jpeg
+map_Ke Material_baseColor.png
 
-newmtl WallsA
-Ns 0.000000
+newmtl white_light
+Ns 159.999985
 Ka 1.000000 1.000000 1.000000
+Kd 1.000000 1.000000 1.000000
 Ks 0.500000 0.500000 0.500000
-Ke 0.000000 0.000000 0.000000
 Ni 1.500000
 d 1.000000
 illum 2
-map_Kd WallsA_baseColor.jpeg
-
-newmtl WallsB
-Ns 0.000000
-Ka 1.000000 1.000000 1.000000
-Ks 0.500000 0.500000 0.500000
-Ke 0.000000 0.000000 0.000000
-Ni 1.500000
-d 1.000000
-illum 2
-map_Kd WallsB_baseColor.jpeg
+map_Ke Material_baseColor.png

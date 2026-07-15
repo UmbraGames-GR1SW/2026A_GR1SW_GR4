@@ -16,9 +16,15 @@
     <Filter Include="Archivos de origen\shaders">
       <UniqueIdentifier>{0668126f-653e-4aed-a759-08c8e137eccb}</UniqueIdentifier>
     </Filter>
+    <Filter Include="Archivos de origen\fonts">
+      <UniqueIdentifier>{217caa93-ee55-47cc-9af4-04a97b14fc12}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Archivos de origen\audios">
+      <UniqueIdentifier>{1f8e36a0-fe95-4736-821e-3425daf980ae}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
-    <ClCompile Include="Scene_Samy.cpp">
+    <ClCompile Include="Scene_Anahi.cpp">
       <Filter>Archivos de origen</Filter>
     </ClCompile>
     <ClCompile Include="glad.c">
@@ -26,10 +32,22 @@
     </ClCompile>
   </ItemGroup>
   <ItemGroup>
-    <None Include="shaders\Vertex_Samy.vs">
+    <None Include="shaders\Vertex_Anahi.vs">
       <Filter>Archivos de origen\shaders</Filter>
     </None>
-    <None Include="shaders\Fragment_Samy.fs">
+    <None Include="shaders\Fragment_Anahi.fs">
+      <Filter>Archivos de origen\shaders</Filter>
+    </None>
+    <None Include="shaders\text.fs">
+      <Filter>Archivos de origen\shaders</Filter>
+    </None>
+    <None Include="shaders\text.vs">
+      <Filter>Archivos de origen\shaders</Filter>
+    </None>
+    <None Include="shaders\box.fs">
+      <Filter>Archivos de origen\shaders</Filter>
+    </None>
+    <None Include="shaders\box.vs">
       <Filter>Archivos de origen\shaders</Filter>
     </None>
     <None Include="shaders\text_samy.fs">
@@ -38,5 +56,15 @@
     <None Include="shaders\text_samy.vs">
       <Filter>Archivos de origen\shaders</Filter>
     </None>
+  </ItemGroup>
+  <ItemGroup>
+    <Media Include="audios\miedo.mp3">
+      <Filter>Archivos de origen\audios</Filter>
+    </Media>
+  </ItemGroup>
+  <ItemGroup>
+    <Font Include="fonts\Bevan-Regular.ttf">
+      <Filter>Archivos de origen\fonts</Filter>
+    </Font>
   </ItemGroup>
 </Project>
