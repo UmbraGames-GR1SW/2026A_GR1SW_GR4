@@ -215,7 +215,7 @@ namespace Warehouse {
     // sistema de colision que el jugador. Si te alcanza sin haberlo
     // visto, dispara el mismo jumpscare que la mirada sostenida.
     static const bool  ZOMBIE_APPROACH_ENABLED = true;
-    static const float ZOMBIE_APPROACH_SPEED = 1.7f;             // mas lento que antes, sigue siendo mas rapido que quedarse quieto
+    static const float ZOMBIE_APPROACH_SPEED = 1.05f;             // ritmo de zombie real, no de corredor
     static const float ZOMBIE_APPROACH_LOOK_ANGLE_DEG = 25.0f;   // cono generoso: facil "volver a verlo" y congelarlo
     static const float ZOMBIE_APPROACH_LOOK_MAX_DISTANCE = 40.0f; // cubre casi toda la sala
     static const float ZOMBIE_APPROACH_STOP_DISTANCE = 3.4f;     // mas rango: ya no queda pegado a la camara
@@ -353,7 +353,7 @@ namespace Warehouse {
     // alla de unos pocos metros. Reusa la misma referencia de progreso
     // (distancia desde el spawn) que ya usamos para el aviso de salida.
     static const float OUTSIDE_FOG_START_FRAC = 0.90f; // un poco mas alla del aviso de salida
-    static const float OUTSIDE_FOG_DENSITY = 0.09f;
+    static const float OUTSIDE_FOG_DENSITY = 0.6f; // muy espesa: no se ve practicamente nada mas alla de 2-3 unidades
 
     // -----------------------------------------------------------
     // Focos de techo: la luz roja sale de puntos sobre el techo real del
@@ -1804,13 +1804,21 @@ namespace Warehouse {
             // por el jumpscare de mirada sostenida (que solo debe aplicar
             // ANTES de pasar el arbol -- despues, el unico jumpscare valido
             // es el de la persecucion alcanzandote).
+            //
+            // OJO: se usa PROYECCION sobre la direccion spawn->arbol, no
+            // distancia recta. Con distancia recta, caminar de costado
+            // (sin acercarse al arbol en absoluto) ya alcanzaba para
+            // marcar "paso el arbol" -- por eso arrancaba a perseguir
+            // antes de tiempo.
             glm::vec2 spawnXZ(
                 g_worldAABB.min.x + SPAWN_X_FRAC * (g_worldAABB.max.x - g_worldAABB.min.x),
                 g_worldAABB.min.z + SPAWN_Z_FRAC * (g_worldAABB.max.z - g_worldAABB.min.z)
             );
-            float playerProgress = glm::length(glm::vec2(camera.Position.x, camera.Position.z) - spawnXZ);
-            float treeProgress = glm::length(treeAnchorXZ - spawnXZ);
-            bool passedTree = playerProgress > treeProgress;
+            glm::vec2 spawnToTreeDir = glm::normalize(treeAnchorXZ - spawnXZ);
+            float treeProgress = glm::dot(treeAnchorXZ - spawnXZ, spawnToTreeDir);
+            float playerProgress = glm::dot(glm::vec2(camera.Position.x, camera.Position.z) - spawnXZ, spawnToTreeDir);
+            const float TREE_PASS_MARGIN = 1.5f; // hay que quedar claramente mas alla, no justo al lado
+            bool passedTree = playerProgress > treeProgress + TREE_PASS_MARGIN;
 
             // -------- Persecucion "no me mires": solo el mas cercano, solo tras pasar el arbol --------
             if (ZOMBIE_APPROACH_ENABLED && !repeatedInstances.empty())
