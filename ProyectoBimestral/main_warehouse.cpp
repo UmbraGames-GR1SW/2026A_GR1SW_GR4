@@ -55,7 +55,7 @@ namespace Warehouse {
     // aparezca el aviso de "recuerdo completado". Es una fraccion de la
     // diagonal del edificio (0 = en el spawn, 1 = en la esquina opuesta).
     // Ajustar si aparece antes/despues de lo esperado en tu mapa real.
-    static const float EXIT_MESSAGE_DISTANCE_FRAC = 0.82f;
+    static const float EXIT_MESSAGE_DISTANCE_FRAC = 0.68f;
 
     // -----------------------------------------------------------
     // Modelo extra: se carga, escala y ubica cerca (no exacto) del centro
@@ -237,6 +237,10 @@ namespace Warehouse {
     static const float ZOMBIE_LUNGE_ENGAGE_RANGE = 9.0f;
     static const float ZOMBIE_LUNGE_THRESHOLD = 1.6f;     // bajado de 4.0: embiste mucho mas seguido
     static const float ZOMBIE_RETREAT_GRACE_DURATION = 5.0f;
+    // Distancia que retrocede tras un susto -- no vuelve a su spawn
+    // original (puede estar lejos), solo se aleja lo suficiente para
+    // no quedar encimado, y puede volver a acercarse antes.
+    static const float ZOMBIE_RETREAT_DISTANCE = 5.5f;
     static float g_pursuerLungeTimer = 0.0f;
     static float g_pursuerRetreatUntil = -1000.0f;
 
@@ -448,6 +452,11 @@ namespace Warehouse {
     // ping ambiental ocasional, que sigue existiendo para cuando no hay
     // persecucion activa).
     static float g_nextChaseSoundTime = -1.0f;
+    // Estado para detectar la transicion mirando -> no mirando (le diste
+    // la espalda) y disparar una senal pronunciada justo en ese instante.
+    static bool g_pursuerWasLooking = false;
+    static float g_pursuerNoticeFlashTime = -1000.0f;
+    static const float PURSUER_NOTICE_FLASH_DURATION = 0.35f;
 
     // Sacudida de camara durante el jumpscare
     static const float JUMPSCARE_SHAKE_AMOUNT = 0.32f;
@@ -900,6 +909,8 @@ namespace Warehouse {
         g_pursuerWasNear = false;
         g_pursuerActivelyMoving = false;
         g_nextChaseSoundTime = -1.0f;
+        g_pursuerWasLooking = false;
+        g_pursuerNoticeFlashTime = -1000.0f;
         exitPhase = EXIT_NONE;
         exitTimer = 0.0f;
 
@@ -1727,6 +1738,13 @@ namespace Warehouse {
             }
             ourShader.setFloat("dread", dread);
 
+            // Pulso breve de "te note" (se desvanece rapido)
+            float noticeElapsed = currentFrame - g_pursuerNoticeFlashTime;
+            float noticeFlash = (noticeElapsed >= 0.0f && noticeElapsed < PURSUER_NOTICE_FLASH_DURATION)
+                ? (1.0f - noticeElapsed / PURSUER_NOTICE_FLASH_DURATION)
+                : 0.0f;
+            ourShader.setFloat("noticeFlash", noticeFlash);
+
             float startleElapsed = currentFrame - g_startleTriggerTime;
             float startleFlash = (startleElapsed >= 0.0f && startleElapsed < STARTLE_FLASH_DURATION)
                 ? (1.0f - startleElapsed / STARTLE_FLASH_DURATION)
@@ -1761,17 +1779,21 @@ namespace Warehouse {
                 }
             }
 
+            // "Paso del arbol": referencia compartida por la persecucion Y
+            // por el jumpscare de mirada sostenida (que solo debe aplicar
+            // ANTES de pasar el arbol -- despues, el unico jumpscare valido
+            // es el de la persecucion alcanzandote).
+            glm::vec2 spawnXZ(
+                g_worldAABB.min.x + SPAWN_X_FRAC * (g_worldAABB.max.x - g_worldAABB.min.x),
+                g_worldAABB.min.z + SPAWN_Z_FRAC * (g_worldAABB.max.z - g_worldAABB.min.z)
+            );
+            float playerProgress = glm::length(glm::vec2(camera.Position.x, camera.Position.z) - spawnXZ);
+            float treeProgress = glm::length(treeAnchorXZ - spawnXZ);
+            bool passedTree = playerProgress > treeProgress;
+
             // -------- Persecucion "no me mires": solo el mas cercano, solo tras pasar el arbol --------
             if (ZOMBIE_APPROACH_ENABLED && !repeatedInstances.empty())
             {
-                glm::vec2 spawnXZ(
-                    g_worldAABB.min.x + SPAWN_X_FRAC * (g_worldAABB.max.x - g_worldAABB.min.x),
-                    g_worldAABB.min.z + SPAWN_Z_FRAC * (g_worldAABB.max.z - g_worldAABB.min.z)
-                );
-                float playerProgress = glm::length(glm::vec2(camera.Position.x, camera.Position.z) - spawnXZ);
-                float treeProgress = glm::length(treeAnchorXZ - spawnXZ);
-                bool passedTree = playerProgress > treeProgress;
-
                 if (passedTree)
                 {
                     // Se elige el perseguidor UNA sola vez (el mas cercano en
@@ -1806,6 +1828,19 @@ namespace Warehouse {
                     }
 
                     g_pursuerActivelyMoving = false;
+
+                    // Señal PRONUNCIADA justo en el instante en que dejas de
+                    // mirarlo (te das la vuelta) y arranca a perseguirte --
+                    // antes esto pasaba en silencio y no se notaba. Sonido
+                    // inmediato + un latido de viñeta fuerte y breve.
+                    if (!inGracePeriod && g_pursuerWasLooking && !looking)
+                    {
+                        playPreloaded("presence");
+                        g_pursuerNoticeFlashTime = currentFrame;
+                        g_nextChaseSoundTime = currentFrame + 0.4f; // que no se pise con el aviso frecuente
+                        std::cout << "[DEBUG] Zombie " << nearestIdx << " empieza a seguirte (le diste la espalda)." << std::endl;
+                    }
+                    g_pursuerWasLooking = looking;
 
                     if (!inGracePeriod && !looking)
                     {
@@ -1894,12 +1929,35 @@ namespace Warehouse {
                             playPreloaded("scream");
                             std::cout << "[DEBUG] *** JUMPSCARE *** Zombie " << nearestIdx << " te alcanzo." << std::endl;
 
-                            // Retirada: vuelve a su posicion original (cerca
-                            // del arbol) y espera antes de volver a acercarse.
-                            // Ademas se resetea el indice de perseguidor: la
-                            // PROXIMA vez se re-evalua cual es el mas cercano
-                            // (puede ser el mismo u otro distinto).
-                            g_zombieCurrentXZ[nearestIdx] = glm::vec2(repeatedInstances[nearestIdx].worldPos.x, repeatedInstances[nearestIdx].worldPos.z);
+                            // Retirada: se aleja una distancia fija (no vuelve
+                            // hasta su spawn original, que puede estar lejos)
+                            // y espera antes de volver a acercarse. Se valida
+                            // que el punto de retirada no quede metido en una
+                            // pared/columna; si falla, se prueban un par de
+                            // angulos alternativos antes de darse por vencido.
+                            {
+                                glm::vec2 currentPos = g_zombieCurrentXZ[nearestIdx];
+                                glm::vec2 awayDir = (distXZ > 0.001f) ? -(toPlayerXZ / distXZ) : glm::vec2(1.0f, 0.0f);
+                                bool placed = false;
+                                for (int attempt = 0; attempt < 5 && !placed; attempt++)
+                                {
+                                    float angleOffset = (attempt == 0) ? 0.0f : glm::radians(30.0f * ((attempt + 1) / 2) * ((attempt % 2 == 0) ? 1.0f : -1.0f));
+                                    glm::vec2 dirTry(
+                                        awayDir.x * cosf(angleOffset) - awayDir.y * sinf(angleOffset),
+                                        awayDir.x * sinf(angleOffset) + awayDir.y * cosf(angleOffset)
+                                    );
+                                    glm::vec2 retreatTarget = currentPos + dirTry * ZOMBIE_RETREAT_DISTANCE;
+                                    glm::vec3 retreatTest(retreatTarget.x, g_worldAABB.min.y + 0.1f, retreatTarget.y);
+                                    if (!CollidesAt(retreatTest, repeatedFootprintRadius) && HasFloorAt(retreatTest))
+                                    {
+                                        g_zombieCurrentXZ[nearestIdx] = retreatTarget;
+                                        placed = true;
+                                    }
+                                }
+                            }
+                            // Se resetea el indice de perseguidor: la PROXIMA
+                            // vez se re-evalua cual es el mas cercano (puede
+                            // ser el mismo u otro distinto).
                             g_pursuerRetreatUntil = currentFrame + ZOMBIE_RETREAT_GRACE_DURATION;
                             g_pursuerLungeTimer = 0.0f;
                             g_pursuerWasNear = false;
@@ -1938,7 +1996,7 @@ namespace Warehouse {
                     auto& inst = repeatedInstances[i];
 
                     // -------- Jumpscare por mirada sostenida (aplica a cualquiera) --------
-                    if (JUMPSCARE_STARE_ENABLED)
+                    if (JUMPSCARE_STARE_ENABLED && !passedTree)
                     {
                         glm::vec3 gazeTarget(g_zombieCurrentXZ[i].x, inst.worldPos.y + REPEATED_MODEL_TARGET_HEIGHT * 0.6f, g_zombieCurrentXZ[i].y);
                         glm::vec3 toZombie = gazeTarget - camera.Position;
@@ -2144,7 +2202,7 @@ namespace Warehouse {
                 float startY = (float)SCR_HEIGHT - 40.0f;
                 float stepY = 32.0f;
                 RenderText(textShader, "-- BODEGA NAVIDENA --", 30.0f, startY, 0.55f, glm::vec3(0.9f, 0.15f, 0.15f), (float)SCR_WIDTH, (float)SCR_HEIGHT);
-                RenderText(textShader, "Encontra la salida antes de que te alcancen", 30.0f, startY - stepY, 0.4f, glm::vec3(0.8f, 0.8f, 0.8f), (float)SCR_WIDTH, (float)SCR_HEIGHT);
+                RenderText(textShader, "Explora y escapa de la sala", 30.0f, startY - stepY, 0.4f, glm::vec3(0.8f, 0.8f, 0.8f), (float)SCR_WIDTH, (float)SCR_HEIGHT);
                 RenderText(textShader, "WASD: Moverse", 30.0f, startY - 3 * stepY, 0.45f, glm::vec3(1.0f, 1.0f, 1.0f), (float)SCR_WIDTH, (float)SCR_HEIGHT);
                 RenderText(textShader, "Mouse: Mirar alrededor", 30.0f, startY - 4 * stepY, 0.45f, glm::vec3(1.0f, 1.0f, 1.0f), (float)SCR_WIDTH, (float)SCR_HEIGHT);
                 RenderText(textShader, "M: Ocultar/mostrar este menu", 30.0f, startY - 5 * stepY, 0.45f, glm::vec3(1.0f, 1.0f, 1.0f), (float)SCR_WIDTH, (float)SCR_HEIGHT);

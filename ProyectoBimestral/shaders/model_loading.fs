@@ -44,6 +44,7 @@ uniform float dread; // 0..1, cercania del perseguidor -- late de vinieta contin
 // Golpe visual breve: 0 = nada, 1 = flash total. Se dispara desde C++
 // en el instante justo en que la linterna se corta.
 uniform float startleFlash;
+uniform float noticeFlash; // pulso breve de vinieta cuando el perseguidor "te nota"
 
 void main()
 {
@@ -146,6 +147,13 @@ void main()
 
     // Golpe visual: flash rojo breve, se desvanece rapido
     result = mix(result, vec3(0.85, 0.03, 0.03), startleFlash);
+
+    // Pulso breve y marcado justo cuando el perseguidor "te nota" (le
+    // diste la espalda): oscurece bordes fuerte y tiñe de rojo un
+    // instante, distinto del latido continuo (dread) y del jumpscare.
+    float vigPulse = smoothstep(0.85, 0.15, length(uv - vec2(0.5)));
+    result = mix(result * mix(1.0, 0.15, noticeFlash), result, vigPulse);
+    result = mix(result, vec3(0.4, 0.0, 0.0), noticeFlash * 0.35);
 
     FragColor = vec4(max(result, vec3(0.0)), 1.0);
 }
