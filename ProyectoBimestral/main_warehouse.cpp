@@ -185,7 +185,10 @@ namespace Warehouse {
     // -----------------------------------------------------------
     static const std::string SOUND_SCREAM_PATH = "music/scream.mp3";
     static const std::string SOUND_LIGHT_FX_PATH = "music/radio.mp3";
-    static const std::string SOUND_AMBIENT_MUSIC_PATH = "music/suspenso.mp3";
+    // Musica de fondo: la pista navideña, en loop desde que carga la escena.
+    static const std::string SOUND_AMBIENT_MUSIC_PATH = "music/silent-night.mp3";
+    // Sonido especifico del apagon de las luces del TECHO (no la linterna).
+    static const std::string SOUND_CEILING_BLACKOUT_PATH = "music/falling-power-sound.mp3";
     static const std::string SOUND_PRESENCE_PATH = "audios/miedo.mp3";
     static const float PRESENCE_SOUND_MIN_INTERVAL = 14.0f;
     static const float PRESENCE_SOUND_MAX_INTERVAL = 28.0f;
@@ -885,6 +888,7 @@ namespace Warehouse {
         initaudio();
         preloadSound(SOUND_SCREAM_PATH.c_str(), "scream");
         preloadSound(SOUND_LIGHT_FX_PATH.c_str(), "lightfx");
+        preloadSound(SOUND_CEILING_BLACKOUT_PATH.c_str(), "ceilingfail");
         preloadSound(SOUND_PRESENCE_PATH.c_str(), "presence");
         playmusic(SOUND_AMBIENT_MUSIC_PATH.c_str());
 
@@ -1572,6 +1576,8 @@ namespace Warehouse {
                 if (isOff != g_redLightWasOff[i])
                 {
                     g_redLightWasOff[i] = isOff;
+                    if (isOff)
+                        playPreloaded("ceilingfail");
                 }
                 if (isOff)
                     value = 0.0f;
@@ -1611,7 +1617,7 @@ namespace Warehouse {
                 ourShader.setFloat("ornamentLightIntensities[" + std::to_string(i) + "]", ornamentIntensity[i]);
             }
 
-              // Shaders parametros extras
+            // Shaders parametros extras
             ourShader.setVec3("fogColor", FOG_COLOR);
             ourShader.setFloat("fogDensity", FOG_DENSITY);
             ourShader.setVec2("screenSize", glm::vec2((float)SCR_WIDTH, (float)SCR_HEIGHT));
@@ -1995,6 +2001,7 @@ namespace Warehouse {
         haltsound();
         closePreloaded("scream");
         closePreloaded("lightfx");
+        closePreloaded("ceilingfail");
         closePreloaded("presence");
 
         // Liberar recursos

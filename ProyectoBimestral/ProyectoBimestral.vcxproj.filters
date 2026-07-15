@@ -24,6 +24,21 @@
     <ClCompile Include="glad.c">
       <Filter>Archivos de origen</Filter>
     </ClCompile>
+    <ClCompile Include="Scene_Anahi.cpp">
+      <Filter>Archivos de origen</Filter>
+    </ClCompile>
+    <ClCompile Include="Scene_Josue.cpp">
+      <Filter>Archivos de origen</Filter>
+    </ClCompile>
+    <ClCompile Include="main_warehouse.cpp">
+      <Filter>Archivos de origen</Filter>
+    </ClCompile>
+    <ClCompile Include="Scene_Pasillo.cpp">
+      <Filter>Archivos de origen</Filter>
+    </ClCompile>
+    <ClCompile Include="Source.cpp">
+      <Filter>Archivos de origen</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <None Include="shaders\Vertex_Samy.vs">
@@ -38,5 +53,13 @@
     <None Include="shaders\text_samy.vs">
       <Filter>Archivos de origen\shaders</Filter>
     </None>
+    <None Include="shaders\jumpscare.fs" />
+    <None Include="shaders\light_billboard.fs" />
+    <None Include="shaders\light_billboard.vs" />
+    <None Include="shaders\model_loading.fs" />
+    <None Include="shaders\model_loading.vs" />
+  </ItemGroup>
+  <ItemGroup>
+    <Text Include="shaders\jumpscare.vs" />
   </ItemGroup>
 </Project>
