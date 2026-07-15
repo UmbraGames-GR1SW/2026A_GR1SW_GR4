@@ -425,6 +425,15 @@ namespace Warehouse {
     // "el mas cercano" cada frame, porque eso repartia el avance entre
     // los 4 y ninguno llegaba a ningun lado). -1 = todavia no elegido.
     static int g_pursuerIndex = -1;
+    // true el frame en que el perseguidor realmente se movio hacia el
+    // jugador -- se usa para suavizar el temblor/vaiven visual mientras
+    // camina (si no, el temblor pasivo se mezcla con la traslacion y se
+    // ve poco fluido).
+    static bool g_pursuerActivelyMoving = false;
+    // Aviso sonoro FRECUENTE mientras persigue activamente (distinto del
+    // ping ambiental ocasional, que sigue existiendo para cuando no hay
+    // persecucion activa).
+    static float g_nextChaseSoundTime = -1.0f;
 
     // Sacudida de camara durante el jumpscare
     static const float JUMPSCARE_SHAKE_AMOUNT = 0.32f;
@@ -781,6 +790,18 @@ namespace Warehouse {
 
     // Carga una textura 2D simple desde disco (para la imagen del jumpscare,
     // que no pasa por la clase Model ya que es una imagen suelta, no un OBJ).
+    // Chequea si la musica de fondo (alias "bgmusic" de audio.h) sigue
+    // sonando. Se define ACA (no en audio.h) para no tocar el archivo
+    // compartido -- usa mciSendStringA directo, que ya esta disponible
+    // porque audio.h incluye windows.h/mmsystem.h.
+    inline bool IsBackgroundMusicPlaying()
+    {
+        char buffer[128] = { 0 };
+        mciSendStringA("status bgmusic mode", buffer, sizeof(buffer), NULL);
+        std::string mode(buffer);
+        return mode == "playing";
+    }
+
     unsigned int LoadTexture2D(const std::string& path)
     {
         unsigned int textureID;
@@ -863,6 +884,8 @@ namespace Warehouse {
         g_pursuerLungeTimer = 0.0f;
         g_pursuerRetreatUntil = -1000.0f;
         g_pursuerWasNear = false;
+        g_pursuerActivelyMoving = false;
+        g_nextChaseSoundTime = -1.0f;
         exitPhase = EXIT_NONE;
         exitTimer = 0.0f;
 
@@ -900,12 +923,27 @@ namespace Warehouse {
 
         // -------------------- Audio --------------------
         initaudio();
+        setvolume(70); // volumen normal para los sonidos generales
         preloadSound(SOUND_SCREAM_PATH.c_str(), "scream");
         preloadSound(SOUND_LIGHT_FX_PATH.c_str(), "lightfx");
+
+        // El sonido de las luces del techo se precarga con volumen mas
+        // bajo (setvolume "hornea" el volumen actual en el alias en el
+        // momento de precargar) -- despues se restaura el volumen normal
+        // para el resto.
+        setvolume(35);
         preloadSound(SOUND_CEILING_BLACKOUT_PATH.c_str(), "ceilingfail");
+        setvolume(70);
+
+        // Un solo alias para "presence" (se usa tanto para el ping ambiental
+        // ocasional como para el aviso de cercania). Antes precargaba el
+        // mismo archivo dos veces bajo alias distintos -- Windows a veces
+        // bloquea el archivo en la primera apertura y la segunda falla en
+        // silencio, asi que el aviso nunca sonaba.
         preloadSound(SOUND_PRESENCE_PATH.c_str(), "presence");
-        preloadSound(SOUND_PRESENCE_PATH.c_str(), "warning");
+
         playmusic(SOUND_AMBIENT_MUSIC_PATH.c_str());
+        float g_nextMusicCheckTime = -1.0f;
 
         // -------------------- Jumpscare: shader, textura e imagen a pantalla completa --------------------
         Shader jumpscareShader("shaders/jumpscare.vs", "shaders/jumpscare.fs");
@@ -1389,6 +1427,17 @@ namespace Warehouse {
 
             if (deltaTime > 0.1f) deltaTime = 0.1f;
 
+            // Vigilante de musica: el flag "repeat" de MCI para mp3 puede
+            // cortarse solo en sesiones largas. Cada 2 segundos se chequea
+            // si sigue sonando, y si no, se reinicia (sin reiniciar todo el
+            // tiempo, solo cuando realmente hace falta).
+            if (currentFrame >= g_nextMusicCheckTime)
+            {
+                if (!IsBackgroundMusicPlaying())
+                    playmusic(SOUND_AMBIENT_MUSIC_PATH.c_str());
+                g_nextMusicCheckTime = currentFrame + 2.0f;
+            }
+
             processInput(window);
 
             // Si estamos en la secuencia de salida, saltamos la lógica y renderizado normal 3D
@@ -1738,6 +1787,8 @@ namespace Warehouse {
                         looking = cosAngle > cosf(glm::radians(ZOMBIE_APPROACH_LOOK_ANGLE_DEG));
                     }
 
+                    g_pursuerActivelyMoving = false;
+
                     if (!inGracePeriod && !looking)
                     {
                         // Se acerca hasta guardar cierta distancia (ya no se
@@ -1746,6 +1797,8 @@ namespace Warehouse {
                         float distXZ = glm::length(toPlayerXZ);
                         if (distXZ > ZOMBIE_APPROACH_STOP_DISTANCE)
                         {
+                            g_pursuerActivelyMoving = true;
+
                             glm::vec2 dir = toPlayerXZ / distXZ;
                             glm::vec2 step = dir * ZOMBIE_APPROACH_SPEED * deltaTime;
 
@@ -1770,13 +1823,24 @@ namespace Warehouse {
                                 glm::vec2 dirFromSpawn = (g_zombieCurrentXZ[nearestIdx] - pursuerSpawnXZ) / distFromSpawn;
                                 g_zombieCurrentXZ[nearestIdx] = pursuerSpawnXZ + dirFromSpawn * ZOMBIE_APPROACH_MAX_RANGE;
                             }
+
+                            // Aviso FRECUENTE mientras persigue de verdad (no
+                            // el ping ambiental ocasional) -- esto es lo que
+                            // te tiene que denotar que hay algo atras.
+                            if (g_nextChaseSoundTime < 0.0f)
+                                g_nextChaseSoundTime = currentFrame + PseudoRandomRange(1.0f, 3.0f, 5.5f);
+                            if (currentFrame >= g_nextChaseSoundTime)
+                            {
+                                playPreloaded("presence");
+                                g_nextChaseSoundTime = currentFrame + PseudoRandomRange(currentFrame, 3.0f, 5.5f);
+                            }
                         }
 
                         // Aviso de cercania: suena UNA vez al cruzar de lejos
                         // a cerca (no se repite mientras se mantiene cerca).
                         bool isNearNow = distXZ < ZOMBIE_WARNING_RANGE;
                         if (isNearNow && !g_pursuerWasNear)
-                            playPreloaded("warning");
+                            playPreloaded("presence");
                         g_pursuerWasNear = isNearNow;
 
                         // Embestida: si te quedas sin mirarlo mientras esta
@@ -1891,16 +1955,23 @@ namespace Warehouse {
                     glm::vec3 effectivePos(g_zombieCurrentXZ[i].x, inst.worldPos.y, g_zombieCurrentXZ[i].y);
                     float effectiveYaw = ZOMBIE_APPROACH_ENABLED ? g_zombieMoveYaw[i] : inst.yawDeg;
 
+                    // Si este es el perseguidor y se esta moviendo de verdad
+                    // hacia el jugador, se amortigua el temblor/vaiven pasivo
+                    // -- si no, se mezclan y la caminata se ve poco fluida
+                    // (como deslizandose en vez de avanzar derecho).
+                    bool isMovingPursuer = ((int)i == g_pursuerIndex) && g_pursuerActivelyMoving;
+                    float motionDamp = isMovingPursuer ? 0.2f : 1.0f;
+
                     float twitchStep = floorf(currentFrame / ZOMBIE_TWITCH_STEP_DURATION + (float)i * 7.0f);
                     float twitchRoll = PseudoRandom01(twitchStep * 4.21f + (float)i * 33.1f);
-                    float twitchYaw = (twitchRoll - 0.5f) * 2.0f * ZOMBIE_TWITCH_YAW_DEG;
+                    float twitchYaw = (twitchRoll - 0.5f) * 2.0f * ZOMBIE_TWITCH_YAW_DEG * motionDamp;
 
                     float instPhase = (float)i * 2.399963f;
                     float bobY = sinf(currentFrame * ZOMBIE_TWITCH_BOB_SPEED + instPhase) * ZOMBIE_TWITCH_BOB_AMOUNT;
 
-                    float swayX = sinf(currentFrame * ZOMBIE_SWAY_SPEED + instPhase) * ZOMBIE_SWAY_RADIUS;
-                    float swayZ = cosf(currentFrame * ZOMBIE_SWAY_SPEED * 0.8f + instPhase) * ZOMBIE_SWAY_RADIUS * 0.6f;
-                    float leanDeg = sinf(currentFrame * ZOMBIE_LEAN_SPEED + instPhase * 1.3f) * ZOMBIE_LEAN_DEG;
+                    float swayX = sinf(currentFrame * ZOMBIE_SWAY_SPEED + instPhase) * ZOMBIE_SWAY_RADIUS * motionDamp;
+                    float swayZ = cosf(currentFrame * ZOMBIE_SWAY_SPEED * 0.8f + instPhase) * ZOMBIE_SWAY_RADIUS * 0.6f * motionDamp;
+                    float leanDeg = sinf(currentFrame * ZOMBIE_LEAN_SPEED + instPhase * 1.3f) * ZOMBIE_LEAN_DEG * motionDamp;
 
                     glm::mat4 instanceMatrix = glm::translate(glm::mat4(1.0f), effectivePos + glm::vec3(swayX, bobY, swayZ));
                     instanceMatrix = glm::rotate(instanceMatrix, glm::radians(effectiveYaw + twitchYaw), glm::vec3(0.0f, 1.0f, 0.0f));
@@ -2059,7 +2130,6 @@ namespace Warehouse {
         closePreloaded("lightfx");
         closePreloaded("ceilingfail");
         closePreloaded("presence");
-        closePreloaded("warning");
 
         // Liberar recursos
         if (extraModel)
